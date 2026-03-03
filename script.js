@@ -1,6 +1,5 @@
 mapboxgl.accessToken = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg";
 
-// Pull published entries from your Vercel API (which pulls from Airtable)
 async function loadEntries() {
   const res = await fetch("/api/entries");
   if (!res.ok) throw new Error(`API error: ${res.status}`);
@@ -21,6 +20,59 @@ let ALL_ENTRIES = [];
 let hoveredId = null;
 let selectedId = null;
 
+let selectedStateName = null;
+let selectedCategory = ""; // "" = All
+
+function norm(s) {
+  return (s || "").trim().toLowerCase();
+}
+
+function isPublished(e) {
+  return norm(e.Status) === "published";
+}
+
+function matchesCategory(e) {
+  if (!selectedCategory) return true;
+  return norm(e.Category) === norm(selectedCategory);
+}
+
+function getPublishedCategories(entries) {
+  const set = new Set();
+  for (const e of entries) {
+    if (!isPublished(e)) continue;
+    const c = (e.Category || "").trim();
+    if (c) set.add(c);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+function setDropdownOptions() {
+  const sel = document.getElementById("categoryFilter");
+  if (!sel) return;
+
+  // keep the first option ("All"), rebuild the rest
+  const keepFirst = sel.options[0];
+  sel.innerHTML = "";
+  sel.appendChild(keepFirst);
+
+  const cats = getPublishedCategories(ALL_ENTRIES);
+  for (const c of cats) {
+    const opt = document.createElement("option");
+    opt.value = c;
+    opt.textContent = c;
+    sel.appendChild(opt);
+  }
+
+  sel.value = selectedCategory;
+}
+
+function entriesForState(stateName) {
+  return ALL_ENTRIES
+    .filter(isPublished)
+    .filter((e) => norm(e.State) === norm(stateName))
+    .filter(matchesCategory);
+}
+
 function renderEntries(stateName) {
   const regionTitle = document.getElementById("region-title");
   const entriesEl = document.getElementById("entries");
@@ -33,16 +85,15 @@ function renderEntries(stateName) {
     return;
   }
 
-  const filtered = ALL_ENTRIES
-    .filter((e) => (e.Status || "").toLowerCase() === "published")
-    .filter(
-      (e) =>
-        (e.State || "").trim().toLowerCase() === stateName.trim().toLowerCase()
-    );
+  const filtered = entriesForState(stateName);
 
   if (filtered.length === 0) {
+    const extra = selectedCategory
+      ? `<p style="margin-top:8px;">Try switching Category back to <b>All</b>.</p>`
+      : "";
     entriesEl.innerHTML =
-      "<p>No published entries yet for this state. Add one in Airtable and publish it.</p>";
+      `<p>No published entries yet for this state${selectedCategory ? " in this category" : ""}.</p>` +
+      extra;
     return;
   }
 
@@ -54,20 +105,54 @@ function renderEntries(stateName) {
       const safeSummary = e.Summary || "";
       const safeLink = e.Link || "#";
       const safeDate = e.Date ? `<div class="meta">${e.Date}</div>` : "";
+      const safeCat = e.Category ? `<div class="meta">${e.Category}</div>` : "";
 
       return `
         <div class="entry">
           <a href="${safeLink}" target="_blank" rel="noopener noreferrer">${safeTitle}</a>
           <div style="margin-top:6px;">${safeSummary}</div>
           ${safeDate}
+          ${safeCat}
         </div>
       `;
     })
     .join("");
 }
 
+// --- Map highlighting ---
+function computeActiveStates() {
+  // states that have ANY published entry, optionally filtered by selectedCategory
+  const set = new Set();
+  for (const e of ALL_ENTRIES) {
+    if (!isPublished(e)) continue;
+    if (!matchesCategory(e)) continue;
+    const st = (e.State || "").trim();
+    if (st) set.add(norm(st));
+  }
+  return set; // normalized state names
+}
+
+function updateStateHighlights() {
+  if (!map.getSource("states")) return;
+
+  const active = computeActiveStates();
+
+  // IMPORTANT: we stored each feature with id = idx.
+  // We need to iterate features from the source to set feature-state.
+  const feats = map.querySourceFeatures("states");
+  for (const f of feats) {
+    const id = f.id;
+    if (id === undefined || id === null) continue;
+
+    const name = (f.properties && (f.properties.NAME || f.properties.name)) || "";
+    const hasData = active.has(norm(name));
+
+    map.setFeatureState({ source: "states", id }, { hasData });
+  }
+}
+
 map.on("load", async () => {
-  // Load Airtable-backed entries
+  // 1) Load entries from Airtable-backed API
   try {
     ALL_ENTRIES = await loadEntries();
   } catch (e) {
@@ -75,12 +160,22 @@ map.on("load", async () => {
     ALL_ENTRIES = [];
   }
 
+  // 2) Setup dropdown
+  setDropdownOptions();
+  const categorySel = document.getElementById("categoryFilter");
+  if (categorySel) {
+    categorySel.addEventListener("change", () => {
+      selectedCategory = categorySel.value || "";
+      updateStateHighlights();
+      renderEntries(selectedStateName);
+    });
+  }
+
+  // 3) Initial sidebar
   renderEntries(null);
 
-  // Load states GeoJSON from your repo (no Mapbox Boundaries dependency)
+  // 4) Load states GeoJSON from your repo
   const states = await fetch("/data/us-states.geojson").then((r) => r.json());
-
-  // Add stable IDs for hover/selected feature-state
   states.features.forEach((f, idx) => {
     f.id = idx;
   });
@@ -90,6 +185,7 @@ map.on("load", async () => {
     data: states,
   });
 
+  // 5) Layers with highlight logic: selected > hover > hasData > default
   map.addLayer({
     id: "states-fill",
     type: "fill",
@@ -101,9 +197,11 @@ map.on("load", async () => {
         "#111827",
         ["boolean", ["feature-state", "hover"], false],
         "#374151",
+        ["boolean", ["feature-state", "hasData"], false],
+        "#93c5fd", // highlighted states (light blue)
         "#d1d5db",
       ],
-      "fill-opacity": 0.35,
+      "fill-opacity": 0.40,
     },
   });
 
@@ -116,6 +214,9 @@ map.on("load", async () => {
       "line-width": 1,
     },
   });
+
+  // Set initial highlights
+  updateStateHighlights();
 
   map.on("mousemove", "states-fill", (e) => {
     map.getCanvas().style.cursor = "pointer";
@@ -144,24 +245,18 @@ map.on("load", async () => {
     if (!e.features || !e.features.length) return;
     const f = e.features[0];
 
-    // Our GeoJSON uses NAME for the state name
     const stateName =
       (f.properties && (f.properties.NAME || f.properties.name)) || null;
 
     // Clear prior selection
     if (selectedId !== null) {
-      map.setFeatureState(
-        { source: "states", id: selectedId },
-        { selected: false }
-      );
+      map.setFeatureState({ source: "states", id: selectedId }, { selected: false });
     }
 
     selectedId = f.id;
-    map.setFeatureState(
-      { source: "states", id: selectedId },
-      { selected: true }
-    );
+    map.setFeatureState({ source: "states", id: selectedId }, { selected: true });
 
-    renderEntries(stateName);
+    selectedStateName = stateName;
+    renderEntries(selectedStateName);
   });
 });
