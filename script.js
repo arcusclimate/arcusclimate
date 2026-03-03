@@ -1,7 +1,6 @@
 mapboxgl.accessToken = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg";
 
-// If /api/entries works, this will pull Airtable data.
-// If it fails for any reason, we'll show nothing until it's fixed.
+// Pull published entries from your Vercel API (which pulls from Airtable)
 async function loadEntries() {
   const res = await fetch("/api/entries");
   if (!res.ok) throw new Error(`API error: ${res.status}`);
@@ -36,7 +35,10 @@ function renderEntries(stateName) {
 
   const filtered = ALL_ENTRIES
     .filter((e) => (e.Status || "").toLowerCase() === "published")
-    .filter((e) => (e.State || "").trim().toLowerCase() === stateName.trim().toLowerCase());
+    .filter(
+      (e) =>
+        (e.State || "").trim().toLowerCase() === stateName.trim().toLowerCase()
+    );
 
   if (filtered.length === 0) {
     entriesEl.innerHTML =
@@ -51,9 +53,8 @@ function renderEntries(stateName) {
       const safeTitle = e.Title || "(Untitled)";
       const safeSummary = e.Summary || "";
       const safeLink = e.Link || "#";
-     const safeDate = e.Date
-  ? `<div class="meta">${e.Date}</div>`
-  : "";
+      const safeDate = e.Date ? `<div class="meta">${e.Date}</div>` : "";
+
       return `
         <div class="entry">
           <a href="${safeLink}" target="_blank" rel="noopener noreferrer">${safeTitle}</a>
@@ -66,7 +67,7 @@ function renderEntries(stateName) {
 }
 
 map.on("load", async () => {
-  // Load Airtable entries
+  // Load Airtable-backed entries
   try {
     ALL_ENTRIES = await loadEntries();
   } catch (e) {
@@ -76,10 +77,10 @@ map.on("load", async () => {
 
   renderEntries(null);
 
-  // Load states GeoJSON from your own repo (reliable)
+  // Load states GeoJSON from your repo (no Mapbox Boundaries dependency)
   const states = await fetch("/data/us-states.geojson").then((r) => r.json());
 
-  // Give each feature a stable id (needed for hover/selected)
+  // Add stable IDs for hover/selected feature-state
   states.features.forEach((f, idx) => {
     f.id = idx;
   });
@@ -143,16 +144,23 @@ map.on("load", async () => {
     if (!e.features || !e.features.length) return;
     const f = e.features[0];
 
-    // This GeoJSON uses NAME for the state name
-    const stateName = (f.properties && (f.properties.NAME || f.properties.name)) || null;
+    // Our GeoJSON uses NAME for the state name
+    const stateName =
+      (f.properties && (f.properties.NAME || f.properties.name)) || null;
 
-    // Clear previous selection
+    // Clear prior selection
     if (selectedId !== null) {
-      map.setFeatureState({ source: "states", id: selectedId }, { selected: false });
+      map.setFeatureState(
+        { source: "states", id: selectedId },
+        { selected: false }
+      );
     }
 
     selectedId = f.id;
-    map.setFeatureState({ source: "states", id: selectedId }, { selected: true });
+    map.setFeatureState(
+      { source: "states", id: selectedId },
+      { selected: true }
+    );
 
     renderEntries(stateName);
   });
