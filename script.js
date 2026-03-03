@@ -1,5 +1,9 @@
 mapboxgl.accessToken = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg";
 
+// Mapbox ISO/RTO tileset info you provided
+const ISO_TILESET_URL = "mapbox://arcusclimate.7zboucdg";
+const ISO_SOURCE_LAYER = "iso-rto-bcdqwz";
+
 async function loadEntries() {
   const res = await fetch("/api/entries");
   if (!res.ok) throw new Error(`API error: ${res.status}`);
@@ -19,16 +23,15 @@ map.addControl(new mapboxgl.NavigationControl(), "top-right");
 let ALL_ENTRIES = [];
 
 // UI state
-let viewMode = "state";      // "state" | "iso"
-let selectedRegion = null;   // state name OR iso name
+let viewMode = "state"; // "state" | "iso"
+let selectedRegion = null; // state name OR iso name
 let selectedCategory = "";
-let sortOrder = "desc";
+let sortOrder = "desc"; // "desc" newest first, "asc" oldest first
 let searchQuery = "";
 
-// Map selection/hover
+// Map hover/selection IDs
 let hoveredStateId = null;
 let selectedStateId = null;
-
 let hoveredIsoId = null;
 let selectedIsoId = null;
 
@@ -52,10 +55,7 @@ function matchesSearch(e) {
 }
 
 function allFilteredEntries() {
-  return ALL_ENTRIES
-    .filter(isPublished)
-    .filter(matchesCategory)
-    .filter(matchesSearch);
+  return ALL_ENTRIES.filter(isPublished).filter(matchesCategory).filter(matchesSearch);
 }
 
 function getPublishedCategories(entries) {
@@ -68,11 +68,11 @@ function getPublishedCategories(entries) {
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
-function setDropdownOptions() {
+function setCategoryDropdownOptions() {
   const sel = document.getElementById("categoryFilter");
   if (!sel) return;
 
-  const keepFirst = sel.options[0];
+  const keepFirst = sel.options[0]; // "All"
   sel.innerHTML = "";
   sel.appendChild(keepFirst);
 
@@ -87,38 +87,36 @@ function setDropdownOptions() {
   sel.value = selectedCategory;
 }
 
-function getIsoNameFromFeatureProps(props) {
-  // robust across different datasets
+function parseIsoNameFromFeature(f) {
+  // We’ll try common property names. If your tileset uses something else,
+  // we can adjust after we inspect f.properties in the console.
+  const p = (f && f.properties) || {};
   return (
-    props.ISO ||
-    props.iso ||
-    props.ISO_NAME ||
-    props.iso_name ||
-    props.RTO ||
-    props.rto ||
-    props.NAME ||
-    props.name ||
-    props.Operator ||
-    props.operator ||
+    p.NAME ||
+    p.name ||
+    p.iso ||
+    p.ISO ||
+    p.rto ||
+    p.RTO ||
+    p.region ||
+    p.REGION ||
     null
   );
 }
 
-function regionEntries(regionName) {
-  const filtered = allFilteredEntries();
-
+function entriesForSelectedRegion(regionName) {
   if (!regionName) return [];
+  const filtered = allFilteredEntries();
 
   if (viewMode === "state") {
     return filtered.filter((e) => norm(e.State) === norm(regionName));
   }
-
   // ISO mode
   return filtered.filter((e) => norm(e.ISO) === norm(regionName));
 }
 
 function federalEntries() {
-  // entries that are published + match category/search but have neither State nor ISO
+  // published + passes category/search, but has neither State nor ISO
   return allFilteredEntries().filter((e) => !norm(e.State) && !norm(e.ISO));
 }
 
@@ -130,11 +128,11 @@ function updateStats() {
   const filtered = allFilteredEntries();
 
   if (viewMode === "state") {
-    const statesSet = new Set(filtered.map((e) => norm(e.State)).filter(Boolean));
-    statStates.textContent = `${statesSet.size}`;
+    const regions = new Set(filtered.map((e) => norm(e.State)).filter(Boolean));
+    statStates.textContent = `${regions.size}`;
   } else {
-    const isoSet = new Set(filtered.map((e) => norm(e.ISO)).filter(Boolean));
-    statStates.textContent = `${isoSet.size}`;
+    const regions = new Set(filtered.map((e) => norm(e.ISO)).filter(Boolean));
+    statStates.textContent = `${regions.size}`;
   }
 
   statEntries.textContent = `${filtered.length}`;
@@ -144,36 +142,26 @@ function renderEntries(regionName) {
   const regionTitle = document.getElementById("region-title");
   const entriesEl = document.getElementById("entries");
 
+  if (!regionTitle || !entriesEl) return;
+
   if (!regionName) {
     regionTitle.textContent = viewMode === "state" ? "Select a State" : "Select an ISO / RTO";
-    entriesEl.innerHTML =
-      `<p>Click a ${viewMode === "state" ? "state" : "region"} to see Arcus-tracked laws, articles, and updates.</p>`;
+    entriesEl.innerHTML = `<p>Click a ${viewMode === "state" ? "state" : "region"} to see Arcus-tracked laws, articles, and updates.</p>`;
     return;
   }
 
   regionTitle.textContent = regionName;
 
-  let filtered = regionEntries(regionName);
-  const fed = federalEntries();
+  let region = entriesForSelectedRegion(regionName);
+  let fed = federalEntries();
 
-  // Sort region entries
-  filtered.sort((a, b) => (a.Date || "").localeCompare(b.Date || ""));
-  if (sortOrder === "desc") filtered.reverse();
-
-  // Sort federal entries
-  fed.sort((a, b) => (a.Date || "").localeCompare(b.Date || ""));
-  if (sortOrder === "desc") fed.reverse();
-
-  if (filtered.length === 0 && fed.length === 0) {
-    const hints = [];
-    if (selectedCategory) hints.push("switch Category back to All");
-    if (searchQuery) hints.push("clear the search box");
-    const hintText = hints.length
-      ? `<p style="margin-top:8px;">Try: <b>${hints.join("</b> or <b>")}</b>.</p>`
-      : "";
-    entriesEl.innerHTML =
-      `<p>No published entries found for this selection with the current filters.</p>${hintText}`;
-    return;
+  // Sort
+  const sortFn = (a, b) => (a.Date || "").localeCompare(b.Date || "");
+  region.sort(sortFn);
+  fed.sort(sortFn);
+  if (sortOrder === "desc") {
+    region.reverse();
+    fed.reverse();
   }
 
   const renderCard = (e) => {
@@ -197,11 +185,19 @@ function renderEntries(regionName) {
     `;
   };
 
-  let html = "";
-
-  if (filtered.length) {
-    html += filtered.map(renderCard).join("");
+  if (region.length === 0 && fed.length === 0) {
+    const hints = [];
+    if (selectedCategory) hints.push("switch Category back to All");
+    if (searchQuery) hints.push("clear the search box");
+    const hintText = hints.length
+      ? `<p style="margin-top:8px;">Try: <b>${hints.join("</b> or <b>")}</b>.</p>`
+      : "";
+    entriesEl.innerHTML = `<p>No published entries found for this selection with the current filters.</p>${hintText}`;
+    return;
   }
+
+  let html = "";
+  if (region.length) html += region.map(renderCard).join("");
 
   if (fed.length) {
     html += `
@@ -215,24 +211,22 @@ function renderEntries(regionName) {
   entriesEl.innerHTML = html;
 }
 
-// ---------- MAP INTENSITY ----------
-function computeCounts() {
-  const counts = new Map(); // normalized region -> count
+// -------- intensity coloring (counts) --------
+function bucketCount(c) {
+  if (c >= 4) return 3;
+  if (c >= 2) return 2;
+  if (c >= 1) return 1;
+  return 0;
+}
 
+function computeCounts() {
+  const counts = new Map();
   for (const e of allFilteredEntries()) {
     const key = viewMode === "state" ? norm(e.State) : norm(e.ISO);
     if (!key) continue;
     counts.set(key, (counts.get(key) || 0) + 1);
   }
   return counts;
-}
-
-function bucketCount(c) {
-  // 0 none, 1=1, 2=2-3, 3=4+
-  if (c >= 4) return 3;
-  if (c >= 2) return 2;
-  if (c >= 1) return 1;
-  return 0;
 }
 
 function updateStateHighlights() {
@@ -253,19 +247,23 @@ function updateStateHighlights() {
 }
 
 function updateIsoHighlights() {
+  // Feature-state works on vector sources, but we must include source-layer
   if (!map.getSource("iso")) return;
 
   const counts = computeCounts();
-  const feats = map.querySourceFeatures("iso");
+  const feats = map.querySourceFeatures("iso", { sourceLayer: ISO_SOURCE_LAYER });
 
   for (const f of feats) {
     const id = f.id;
     if (id === undefined || id === null) continue;
 
-    const nm = getIsoNameFromFeatureProps(f.properties || {}) || "";
+    const nm = parseIsoNameFromFeature(f) || "";
     const c = counts.get(norm(nm)) || 0;
 
-    map.setFeatureState({ source: "iso", id }, { countLevel: bucketCount(c) });
+    map.setFeatureState(
+      { source: "iso", "source-layer": ISO_SOURCE_LAYER, id },
+      { countLevel: bucketCount(c) }
+    );
   }
 }
 
@@ -274,38 +272,39 @@ function updateHighlights() {
   else updateIsoHighlights();
 }
 
-// ---------- LAYER TOGGLING ----------
 function setLayerVisibility() {
-  const showStates = viewMode === "state";
-  const stateVis = showStates ? "visible" : "none";
-  const isoVis = showStates ? "none" : "visible";
+  const showState = viewMode === "state";
+  const showIso = viewMode === "iso";
 
-  if (map.getLayer("states-fill")) map.setLayoutProperty("states-fill", "visibility", stateVis);
-  if (map.getLayer("states-outline")) map.setLayoutProperty("states-outline", "visibility", stateVis);
+  if (map.getLayer("states-fill")) map.setLayoutProperty("states-fill", "visibility", showState ? "visible" : "none");
+  if (map.getLayer("states-outline")) map.setLayoutProperty("states-outline", "visibility", showState ? "visible" : "none");
 
-  if (map.getLayer("iso-fill")) map.setLayoutProperty("iso-fill", "visibility", isoVis);
-  if (map.getLayer("iso-outline")) map.setLayoutProperty("iso-outline", "visibility", isoVis);
+  if (map.getLayer("iso-fill")) map.setLayoutProperty("iso-fill", "visibility", showIso ? "visible" : "none");
+  if (map.getLayer("iso-outline")) map.setLayoutProperty("iso-outline", "visibility", showIso ? "visible" : "none");
 }
 
 function clearSelection() {
-  // clear state selection
+  // Clear state selection
   if (selectedStateId !== null && map.getSource("states")) {
     map.setFeatureState({ source: "states", id: selectedStateId }, { selected: false });
   }
   selectedStateId = null;
 
-  // clear iso selection
+  // Clear ISO selection
   if (selectedIsoId !== null && map.getSource("iso")) {
-    map.setFeatureState({ source: "iso", id: selectedIsoId }, { selected: false });
+    map.setFeatureState(
+      { source: "iso", "source-layer": ISO_SOURCE_LAYER, id: selectedIsoId },
+      { selected: false }
+    );
   }
   selectedIsoId = null;
 
   selectedRegion = null;
 }
 
-// ---------- LOAD ----------
+// -------------- load --------------
 map.on("load", async () => {
-  // Load entries
+  // 1) Load entries
   try {
     ALL_ENTRIES = await loadEntries();
   } catch (e) {
@@ -313,8 +312,8 @@ map.on("load", async () => {
     ALL_ENTRIES = [];
   }
 
-  // Hook UI controls
-  setDropdownOptions();
+  // 2) Hook up UI
+  setCategoryDropdownOptions();
 
   const viewSel = document.getElementById("viewMode");
   const categorySel = document.getElementById("categoryFilter");
@@ -358,11 +357,11 @@ map.on("load", async () => {
     });
   }
 
-  // Initial stats + empty state
+  // Initial empty state
   updateStats();
   renderEntries(null);
 
-  // Load State boundaries
+  // 3) Load state boundaries from your repo
   const states = await fetch("/data/us-states.geojson").then((r) => r.json());
   states.features.forEach((f, idx) => (f.id = idx));
 
@@ -377,6 +376,7 @@ map.on("load", async () => {
         "case",
         ["boolean", ["feature-state", "selected"], false], "#111827",
         ["boolean", ["feature-state", "hover"], false], "#374151",
+
         ["==", ["feature-state", "countLevel"], 3], "#60a5fa",
         ["==", ["feature-state", "countLevel"], 2], "#93c5fd",
         ["==", ["feature-state", "countLevel"], 1], "#bfdbfe",
@@ -393,8 +393,44 @@ map.on("load", async () => {
     paint: { "line-color": "#9ca3af", "line-width": 1 },
   });
 
-  // Load ISO/RTO boundaries (you uploaded this)
-    // Start in state mode
+  // 4) ISO/RTO boundaries from Mapbox tileset
+  map.addSource("iso", {
+    type: "vector",
+    url: ISO_TILESET_URL,
+  });
+
+  map.addLayer({
+    id: "iso-fill",
+    type: "fill",
+    source: "iso",
+    "source-layer": ISO_SOURCE_LAYER,
+    paint: {
+      "fill-color": [
+        "case",
+        ["boolean", ["feature-state", "selected"], false], "#111827",
+        ["boolean", ["feature-state", "hover"], false], "#374151",
+
+        ["==", ["feature-state", "countLevel"], 3], "#34d399",
+        ["==", ["feature-state", "countLevel"], 2], "#86efac",
+        ["==", ["feature-state", "countLevel"], 1], "#bbf7d0",
+        "#e5e7eb"
+      ],
+      "fill-opacity": 0.30,
+    },
+  });
+
+  map.addLayer({
+    id: "iso-outline",
+    type: "line",
+    source: "iso",
+    "source-layer": ISO_SOURCE_LAYER,
+    paint: { "line-color": "#6b7280", "line-width": 1 },
+  });
+
+  // Set initial visibility based on dropdown
+  setLayerVisibility();
+
+  // Initial intensity coloring
   updateHighlights();
 
   // --- State interactions ---
@@ -427,23 +463,74 @@ map.on("load", async () => {
     if (!e.features?.length) return;
 
     const f = e.features[0];
-    const stateName =
-      (f.properties && (f.properties.NAME || f.properties.name)) || null;
+    const stateName = (f.properties && (f.properties.NAME || f.properties.name)) || null;
 
     if (selectedStateId !== null) {
+      map.setFeatureState({ source: "states", id: selectedStateId }, { selected: false });
+    }
+
+    selectedStateId = f.id;
+    map.setFeatureState({ source: "states", id: selectedStateId }, { selected: true });
+
+    selectedRegion = stateName;
+    renderEntries(selectedRegion);
+  });
+
+  // --- ISO interactions ---
+  map.on("mousemove", "iso-fill", (e) => {
+    if (viewMode !== "iso") return;
+    map.getCanvas().style.cursor = "pointer";
+    if (!e.features?.length) return;
+
+    const f = e.features[0];
+    const id = f.id;
+
+    if (hoveredIsoId !== null && hoveredIsoId !== id) {
       map.setFeatureState(
-        { source: "states", id: selectedStateId },
+        { source: "iso", "source-layer": ISO_SOURCE_LAYER, id: hoveredIsoId },
+        { hover: false }
+      );
+    }
+
+    hoveredIsoId = id;
+    map.setFeatureState(
+      { source: "iso", "source-layer": ISO_SOURCE_LAYER, id },
+      { hover: true }
+    );
+  });
+
+  map.on("mouseleave", "iso-fill", () => {
+    if (hoveredIsoId !== null) {
+      map.setFeatureState(
+        { source: "iso", "source-layer": ISO_SOURCE_LAYER, id: hoveredIsoId },
+        { hover: false }
+      );
+    }
+    hoveredIsoId = null;
+    map.getCanvas().style.cursor = "";
+  });
+
+  map.on("click", "iso-fill", (e) => {
+    if (viewMode !== "iso") return;
+    if (!e.features?.length) return;
+
+    const f = e.features[0];
+    const isoName = parseIsoNameFromFeature(f);
+
+    if (selectedIsoId !== null) {
+      map.setFeatureState(
+        { source: "iso", "source-layer": ISO_SOURCE_LAYER, id: selectedIsoId },
         { selected: false }
       );
     }
 
-    selectedStateId = f.id;
+    selectedIsoId = f.id;
     map.setFeatureState(
-      { source: "states", id: selectedStateId },
+      { source: "iso", "source-layer": ISO_SOURCE_LAYER, id: selectedIsoId },
       { selected: true }
     );
 
-    selectedRegion = stateName;
+    selectedRegion = isoName;
     renderEntries(selectedRegion);
   });
 });
