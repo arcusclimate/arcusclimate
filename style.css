@@ -1,0 +1,35 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+}
+
+#app {
+  display: flex;
+  height: 100vh;
+}
+
+#map {
+  width: 65%;
+}
+
+#sidebar {
+  width: 35%;
+  padding: 20px;
+  overflow-y: auto;
+  border-left: 1px solid #eee;
+}
+
+#sidebar h2 {
+  margin-top: 0;
+}
+
+.entry {
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #ddd;
+}
+
+.entry a {
+  text-decoration: none;
+  font-weight: bold;
+}
