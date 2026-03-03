@@ -22,6 +22,8 @@ let selectedId = null;
 
 let selectedStateName = null;
 let selectedCategory = ""; // "" = All
+let sortOrder = "desc";    // desc=newest
+let searchQuery = "";      // text search
 
 function norm(s) {
   return (s || "").trim().toLowerCase();
@@ -34,6 +36,12 @@ function isPublished(e) {
 function matchesCategory(e) {
   if (!selectedCategory) return true;
   return norm(e.Category) === norm(selectedCategory);
+}
+
+function matchesSearch(e) {
+  if (!searchQuery) return true;
+  const hay = `${e.Title || ""} ${e.Summary || ""}`.toLowerCase();
+  return hay.includes(searchQuery);
 }
 
 function getPublishedCategories(entries) {
@@ -50,7 +58,6 @@ function setDropdownOptions() {
   const sel = document.getElementById("categoryFilter");
   if (!sel) return;
 
-  // keep the first option ("All"), rebuild the rest
   const keepFirst = sel.options[0];
   sel.innerHTML = "";
   sel.appendChild(keepFirst);
@@ -66,11 +73,27 @@ function setDropdownOptions() {
   sel.value = selectedCategory;
 }
 
-function entriesForState(stateName) {
+function allFilteredEntries() {
   return ALL_ENTRIES
     .filter(isPublished)
-    .filter((e) => norm(e.State) === norm(stateName))
-    .filter(matchesCategory);
+    .filter(matchesCategory)
+    .filter(matchesSearch);
+}
+
+function entriesForState(stateName) {
+  return allFilteredEntries().filter((e) => norm(e.State) === norm(stateName));
+}
+
+function updateStats() {
+  const statStates = document.getElementById("statStates");
+  const statEntries = document.getElementById("statEntries");
+  if (!statStates || !statEntries) return;
+
+  const filtered = allFilteredEntries();
+  const statesSet = new Set(filtered.map((e) => norm(e.State)).filter(Boolean));
+
+  statStates.textContent = `${statesSet.size}`;
+  statEntries.textContent = `${filtered.length}`;
 }
 
 function renderEntries(stateName) {
@@ -85,19 +108,22 @@ function renderEntries(stateName) {
     return;
   }
 
-  const filtered = entriesForState(stateName);
+  let filtered = entriesForState(stateName);
 
   if (filtered.length === 0) {
-    const extra = selectedCategory
-      ? `<p style="margin-top:8px;">Try switching Category back to <b>All</b>.</p>`
+    const hints = [];
+    if (selectedCategory) hints.push("switch Category back to All");
+    if (searchQuery) hints.push("clear the search box");
+    const hintText = hints.length
+      ? `<p style="margin-top:8px;">Try: <b>${hints.join("</b> or <b>")}</b>.</p>`
       : "";
     entriesEl.innerHTML =
-      `<p>No published entries yet for this state${selectedCategory ? " in this category" : ""}.</p>` +
-      extra;
+      `<p>No published entries found for this state with the current filters.</p>${hintText}`;
     return;
   }
 
-  filtered.sort((a, b) => (b.Date || "").localeCompare(a.Date || ""));
+  filtered.sort((a, b) => (a.Date || "").localeCompare(b.Date || ""));
+  if (sortOrder === "desc") filtered.reverse();
 
   entriesEl.innerHTML = filtered
     .map((e) => {
@@ -119,40 +145,42 @@ function renderEntries(stateName) {
     .join("");
 }
 
-// --- Map highlighting ---
-function computeActiveStates() {
-  // states that have ANY published entry, optionally filtered by selectedCategory
-  const set = new Set();
-  for (const e of ALL_ENTRIES) {
-    if (!isPublished(e)) continue;
-    if (!matchesCategory(e)) continue;
-    const st = (e.State || "").trim();
-    if (st) set.add(norm(st));
+// --- Map intensity highlighting ---
+function computeStateCounts() {
+  const counts = new Map(); // normalized state -> count
+  for (const e of allFilteredEntries()) {
+    const st = norm(e.State);
+    if (!st) continue;
+    counts.set(st, (counts.get(st) || 0) + 1);
   }
-  return set; // normalized state names
+  return counts;
 }
 
 function updateStateHighlights() {
   if (!map.getSource("states")) return;
 
-  const active = computeActiveStates();
-
-  // IMPORTANT: we stored each feature with id = idx.
-  // We need to iterate features from the source to set feature-state.
+  const counts = computeStateCounts();
   const feats = map.querySourceFeatures("states");
+
   for (const f of feats) {
     const id = f.id;
     if (id === undefined || id === null) continue;
 
     const name = (f.properties && (f.properties.NAME || f.properties.name)) || "";
-    const hasData = active.has(norm(name));
+    const c = counts.get(norm(name)) || 0;
 
-    map.setFeatureState({ source: "states", id }, { hasData });
+    // Bucket counts to keep visuals simple
+    let level = 0; // 0 = none
+    if (c >= 1 && c <= 1) level = 1;
+    else if (c >= 2 && c <= 3) level = 2;
+    else if (c >= 4) level = 3;
+
+    map.setFeatureState({ source: "states", id }, { countLevel: level });
   }
 }
 
 map.on("load", async () => {
-  // 1) Load entries from Airtable-backed API
+  // 1) Load entries
   try {
     ALL_ENTRIES = await loadEntries();
   } catch (e) {
@@ -160,21 +188,43 @@ map.on("load", async () => {
     ALL_ENTRIES = [];
   }
 
-  // 2) Setup dropdown
+  // 2) Hook UI controls
   setDropdownOptions();
+
   const categorySel = document.getElementById("categoryFilter");
+  const sortSel = document.getElementById("sortOrder");
+  const searchInput = document.getElementById("searchInput");
+
   if (categorySel) {
     categorySel.addEventListener("change", () => {
       selectedCategory = categorySel.value || "";
+      updateStats();
       updateStateHighlights();
       renderEntries(selectedStateName);
     });
   }
 
-  // 3) Initial sidebar
+  if (sortSel) {
+    sortSel.addEventListener("change", () => {
+      sortOrder = sortSel.value || "desc";
+      renderEntries(selectedStateName);
+    });
+  }
+
+  if (searchInput) {
+    searchInput.addEventListener("input", () => {
+      searchQuery = (searchInput.value || "").trim().toLowerCase();
+      updateStats();
+      updateStateHighlights();
+      renderEntries(selectedStateName);
+    });
+  }
+
+  // 3) Initial sidebar + stats
+  updateStats();
   renderEntries(null);
 
-  // 4) Load states GeoJSON from your repo
+  // 4) Load states GeoJSON
   const states = await fetch("/data/us-states.geojson").then((r) => r.json());
   states.features.forEach((f, idx) => {
     f.id = idx;
@@ -185,7 +235,7 @@ map.on("load", async () => {
     data: states,
   });
 
-  // 5) Layers with highlight logic: selected > hover > hasData > default
+  // 5) Layers: selected > hover > intensity > default
   map.addLayer({
     id: "states-fill",
     type: "fill",
@@ -197,9 +247,16 @@ map.on("load", async () => {
         "#111827",
         ["boolean", ["feature-state", "hover"], false],
         "#374151",
-        ["boolean", ["feature-state", "hasData"], false],
-        "#93c5fd", // highlighted states (light blue)
-        "#d1d5db",
+
+        // intensity buckets
+        ["==", ["feature-state", "countLevel"], 3],
+        "#60a5fa",
+        ["==", ["feature-state", "countLevel"], 2],
+        "#93c5fd",
+        ["==", ["feature-state", "countLevel"], 1],
+        "#bfdbfe",
+
+        "#d1d5db"
       ],
       "fill-opacity": 0.40,
     },
@@ -215,7 +272,7 @@ map.on("load", async () => {
     },
   });
 
-  // Set initial highlights
+  // initial highlights
   updateStateHighlights();
 
   map.on("mousemove", "states-fill", (e) => {
