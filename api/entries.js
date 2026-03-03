@@ -29,6 +29,7 @@ export default async function handler(req, res) {
   Link: rec.fields.Link || "",
   Date: rec.fields.Date || "",
   State: rec.fields.State || "",
+  ISO: rec.fields.ISO || "",
   Status: rec.fields.Status || "",
   Category: rec.fields.Category || "",
 }));
