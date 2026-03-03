@@ -1,28 +1,12 @@
 mapboxgl.accessToken = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg";
 
-// Sample entries for now
-const SAMPLE_ENTRIES = [
-  {
-    Title: "Virginia Data Center Moratorium Proposal",
-    Summary:
-      "Proposed legislation evaluating groundwater and grid impacts of hyperscale facilities.",
-    Link: "https://example.com",
-    Date: "2026-03-03",
-    State: "Virginia",
-    Status: "Published",
-  },
-];
-
+// If /api/entries works, this will pull Airtable data.
+// If it fails for any reason, we'll show nothing until it's fixed.
 async function loadEntries() {
-  try {
-    const res = await fetch("/api/entries");
-    if (!res.ok) throw new Error(`API error: ${res.status}`);
-    const data = await res.json();
-    return Array.isArray(data) ? data : SAMPLE_ENTRIES;
-  } catch (e) {
-    console.warn("Using SAMPLE_ENTRIES (API not set up yet).", e);
-    return SAMPLE_ENTRIES;
-  }
+  const res = await fetch("/api/entries");
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
 }
 
 const map = new mapboxgl.Map({
@@ -35,6 +19,8 @@ const map = new mapboxgl.Map({
 map.addControl(new mapboxgl.NavigationControl(), "top-right");
 
 let ALL_ENTRIES = [];
+let hoveredId = null;
+let selectedId = null;
 
 function renderEntries(stateName) {
   const regionTitle = document.getElementById("region-title");
@@ -42,19 +28,15 @@ function renderEntries(stateName) {
 
   regionTitle.textContent = stateName ? stateName : "Select a State";
 
-  const filtered = !stateName
-    ? []
-    : ALL_ENTRIES.filter(
-        (e) =>
-          (e.Status || "").toLowerCase() === "published" &&
-          (e.State || "").toLowerCase() === stateName.toLowerCase()
-      );
-
   if (!stateName) {
     entriesEl.innerHTML =
       "<p>Click a state to see Arcus-tracked laws, articles, and updates.</p>";
     return;
   }
+
+  const filtered = ALL_ENTRIES
+    .filter((e) => (e.Status || "").toLowerCase() === "published")
+    .filter((e) => (e.State || "").trim().toLowerCase() === stateName.trim().toLowerCase());
 
   if (filtered.length === 0) {
     entriesEl.innerHTML =
@@ -84,22 +66,33 @@ function renderEntries(stateName) {
 }
 
 map.on("load", async () => {
-  ALL_ENTRIES = await loadEntries();
+  // Load Airtable entries
+  try {
+    ALL_ENTRIES = await loadEntries();
+  } catch (e) {
+    console.error("Failed to load /api/entries", e);
+    ALL_ENTRIES = [];
+  }
+
   renderEntries(null);
 
-  // Add Mapbox's US states boundary tileset
-  map.addSource("states", {
-    type: "vector",
-    url: "mapbox://mapbox.boundaries-adm1-v3",
+  // Load states GeoJSON from your own repo (reliable)
+  const states = await fetch("/data/us-states.geojson").then((r) => r.json());
+
+  // Give each feature a stable id (needed for hover/selected)
+  states.features.forEach((f, idx) => {
+    f.id = idx;
   });
 
-  // Fill layer (only USA)
+  map.addSource("states", {
+    type: "geojson",
+    data: states,
+  });
+
   map.addLayer({
     id: "states-fill",
     type: "fill",
     source: "states",
-    "source-layer": "boundaries_admin_1",
-    filter: ["==", ["get", "iso_3166_1"], "US"],
     paint: {
       "fill-color": [
         "case",
@@ -113,20 +106,15 @@ map.on("load", async () => {
     },
   });
 
-  // Outline layer
   map.addLayer({
     id: "states-outline",
     type: "line",
     source: "states",
-    "source-layer": "boundaries_admin_1",
-    filter: ["==", ["get", "iso_3166_1"], "US"],
     paint: {
       "line-color": "#9ca3af",
       "line-width": 1,
     },
   });
-
-  let hoveredId = null;
 
   map.on("mousemove", "states-fill", (e) => {
     map.getCanvas().style.cursor = "pointer";
@@ -136,26 +124,17 @@ map.on("load", async () => {
     const id = f.id;
 
     if (hoveredId !== null && hoveredId !== id) {
-      map.setFeatureState(
-        { source: "states", sourceLayer: "boundaries_admin_1", id: hoveredId },
-        { hover: false }
-      );
+      map.setFeatureState({ source: "states", id: hoveredId }, { hover: false });
     }
 
     hoveredId = id;
-    map.setFeatureState(
-      { source: "states", sourceLayer: "boundaries_admin_1", id: hoveredId },
-      { hover: true }
-    );
+    map.setFeatureState({ source: "states", id: hoveredId }, { hover: true });
   });
 
   map.on("mouseleave", "states-fill", () => {
     map.getCanvas().style.cursor = "";
     if (hoveredId !== null) {
-      map.setFeatureState(
-        { source: "states", sourceLayer: "boundaries_admin_1", id: hoveredId },
-        { hover: false }
-      );
+      map.setFeatureState({ source: "states", id: hoveredId }, { hover: false });
     }
     hoveredId = null;
   });
@@ -164,26 +143,16 @@ map.on("load", async () => {
     if (!e.features || !e.features.length) return;
     const f = e.features[0];
 
-    // Mapbox boundaries include the state name in "name_en" (usually)
-    const stateName = f.properties && (f.properties.name_en || f.properties.name)
-      ? (f.properties.name_en || f.properties.name)
-      : null;
+    // This GeoJSON uses NAME for the state name
+    const stateName = (f.properties && (f.properties.NAME || f.properties.name)) || null;
 
-    // Clear previous selection (simple approach: just clear the last selected if we tracked it)
-    // We'll store selectedId on window for simplicity.
-    if (window.__selectedStateId != null) {
-      map.setFeatureState(
-        { source: "states", sourceLayer: "boundaries_admin_1", id: window.__selectedStateId },
-        { selected: false }
-      );
+    // Clear previous selection
+    if (selectedId !== null) {
+      map.setFeatureState({ source: "states", id: selectedId }, { selected: false });
     }
 
-    window.__selectedStateId = f.id;
-
-    map.setFeatureState(
-      { source: "states", sourceLayer: "boundaries_admin_1", id: window.__selectedStateId },
-      { selected: true }
-    );
+    selectedId = f.id;
+    map.setFeatureState({ source: "states", id: selectedId }, { selected: true });
 
     renderEntries(stateName);
   });
