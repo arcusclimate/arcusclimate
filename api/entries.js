@@ -24,13 +24,14 @@ export default async function handler(req, res) {
     const data = await r.json();
 
     const out = (data.records || []).map((rec) => ({
-      Title: rec.fields.Title || "",
-      Summary: rec.fields.Summary || "",
-      Link: rec.fields.Link || "",
-      Date: rec.fields.Date || "",
-      State: rec.fields.State || "",
-      Status: rec.fields.Status || "",
-    }));
+  Title: rec.fields.Title || "",
+  Summary: rec.fields.Summary || "",
+  Link: rec.fields.Link || "",
+  Date: rec.fields.Date || "",
+  State: rec.fields.State || "",
+  Status: rec.fields.Status || "",
+  Category: rec.fields.Category || "",
+}));
 
     return res.status(200).json(out);
   } catch (err) {
