@@ -51,9 +51,9 @@ function renderEntries(stateName) {
       const safeTitle = e.Title || "(Untitled)";
       const safeSummary = e.Summary || "";
       const safeLink = e.Link || "#";
-      const safeDate = e.Date
-        ? `<div style="opacity:.7;font-size:12px;margin-top:6px;">${e.Date}</div>`
-        : "";
+     const safeDate = e.Date
+  ? `<div class="meta">${e.Date}</div>`
+  : "";
       return `
         <div class="entry">
           <a href="${safeLink}" target="_blank" rel="noopener noreferrer">${safeTitle}</a>
