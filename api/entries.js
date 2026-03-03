@@ -13,9 +13,7 @@ export default async function handler(req, res) {
     )}?filterByFormula=${encodeURIComponent("{Status}='Published'")}`;
 
     const r = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${AIRTABLE_TOKEN}`,
-      },
+      headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
     });
 
     if (!r.ok) {
@@ -34,8 +32,8 @@ export default async function handler(req, res) {
       Status: rec.fields.Status || "",
     }));
 
-    res.status(200).json(out);
+    return res.status(200).json(out);
   } catch (err) {
-    res.status(500).json({ error: String(err) });
+    return res.status(500).json({ error: String(err) });
   }
 }
