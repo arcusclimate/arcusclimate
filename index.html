@@ -24,7 +24,7 @@
 
       <div id="stats">
         <div class="stat">
-          <div class="statLabel">States with activity</div>
+          <div class="statLabel">Regions with activity</div>
           <div class="statValue" id="statStates">—</div>
         </div>
         <div class="stat">
@@ -34,6 +34,14 @@
       </div>
 
       <div id="filters">
+        <div class="field">
+          <label for="viewMode">View</label>
+          <select id="viewMode">
+            <option value="state">State</option>
+            <option value="iso">ISO / RTO</option>
+          </select>
+        </div>
+
         <div class="field">
           <label for="categoryFilter">Category</label>
           <select id="categoryFilter">
