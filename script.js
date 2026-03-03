@@ -394,40 +394,7 @@ map.on("load", async () => {
   });
 
   // Load ISO/RTO boundaries (you uploaded this)
-  const iso = await fetch("/data/iso-rto.geojson").then((r) => r.json());
-  iso.features.forEach((f, idx) => (f.id = idx));
-
-  map.addSource("iso", { type: "geojson", data: iso });
-
-  map.addLayer({
-    id: "iso-fill",
-    type: "fill",
-    source: "iso",
-    paint: {
-      "fill-color": [
-        "case",
-        ["boolean", ["feature-state", "selected"], false], "#111827",
-        ["boolean", ["feature-state", "hover"], false], "#374151",
-        ["==", ["feature-state", "countLevel"], 3], "#34d399",
-        ["==", ["feature-state", "countLevel"], 2], "#86efac",
-        ["==", ["feature-state", "countLevel"], 1], "#bbf7d0",
-        "#e5e7eb"
-      ],
-      "fill-opacity": 0.30,
-    },
-  });
-
-  map.addLayer({
-    id: "iso-outline",
-    type: "line",
-    source: "iso",
-    paint: { "line-color": "#6b7280", "line-width": 1 },
-  });
-
-  // Start in state mode (hide ISO)
-  setLayerVisibility();
-
-  // Initial intensity
+    // Start in state mode
   updateHighlights();
 
   // --- State interactions ---
@@ -460,59 +427,23 @@ map.on("load", async () => {
     if (!e.features?.length) return;
 
     const f = e.features[0];
-    const stateName = (f.properties && (f.properties.NAME || f.properties.name)) || null;
+    const stateName =
+      (f.properties && (f.properties.NAME || f.properties.name)) || null;
 
     if (selectedStateId !== null) {
-      map.setFeatureState({ source: "states", id: selectedStateId }, { selected: false });
+      map.setFeatureState(
+        { source: "states", id: selectedStateId },
+        { selected: false }
+      );
     }
 
     selectedStateId = f.id;
-    map.setFeatureState({ source: "states", id: selectedStateId }, { selected: true });
+    map.setFeatureState(
+      { source: "states", id: selectedStateId },
+      { selected: true }
+    );
 
     selectedRegion = stateName;
-    renderEntries(selectedRegion);
-  });
-
-  // --- ISO interactions ---
-  map.on("mousemove", "iso-fill", (e) => {
-    if (viewMode !== "iso") return;
-    map.getCanvas().style.cursor = "pointer";
-    if (!e.features?.length) return;
-
-    const f = e.features[0];
-    const id = f.id;
-
-    if (hoveredIsoId !== null && hoveredIsoId !== id) {
-      map.setFeatureState({ source: "iso", id: hoveredIsoId }, { hover: false });
-    }
-
-    hoveredIsoId = id;
-    map.setFeatureState({ source: "iso", id }, { hover: true });
-  });
-
-  map.on("mouseleave", "iso-fill", () => {
-    if (hoveredIsoId !== null && map.getSource("iso")) {
-      map.setFeatureState({ source: "iso", id: hoveredIsoId }, { hover: false });
-    }
-    hoveredIsoId = null;
-    map.getCanvas().style.cursor = "";
-  });
-
-  map.on("click", "iso-fill", (e) => {
-    if (viewMode !== "iso") return;
-    if (!e.features?.length) return;
-
-    const f = e.features[0];
-    const nm = getIsoNameFromFeatureProps(f.properties || {}) || null;
-
-    if (selectedIsoId !== null) {
-      map.setFeatureState({ source: "iso", id: selectedIsoId }, { selected: false });
-    }
-
-    selectedIsoId = f.id;
-    map.setFeatureState({ source: "iso", id: selectedIsoId }, { selected: true });
-
-    selectedRegion = nm;
     renderEntries(selectedRegion);
   });
 });
