@@ -1,4 +1,4 @@
-mapboxgl.accessToken = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWF3aDdhODBqNnMycm9odGd2aDliaWQifQ.2AnSltK5yr3oso1okauxsg";
+mapboxgl.accessToken = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg";
 
 // Sample entries for now
 const SAMPLE_ENTRIES = [
