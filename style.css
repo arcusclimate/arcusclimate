@@ -11,7 +11,6 @@
 }
 
 * { box-sizing: border-box; }
-
 html, body { height: 100%; }
 
 body{
@@ -71,29 +70,59 @@ body{
   line-height: 1.4;
 }
 
-#entries{
-  padding: 14px 18px 18px 18px;
-  overflow-y: auto;
+/* Stats row */
+#stats{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+}
+
+.stat{
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-shadow: var(--shadow-soft);
+}
+
+.statLabel{
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.statValue{
+  margin-top: 6px;
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
 }
 
 /* Filters */
 #filters{
   padding: 12px 18px;
   border-bottom: 1px solid var(--border);
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 10px;
-  align-items: center;
+  align-items: end;
   background: #fff;
 }
 
-#filters label{
+.field label{
+  display: block;
   font-size: 12px;
   color: var(--muted);
-  font-weight: 600;
+  font-weight: 700;
+  margin-bottom: 6px;
 }
 
-#filters select{
-  flex: 1;
+.field select{
+  width: 100%;
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 10px 12px;
@@ -102,8 +131,34 @@ body{
   outline: none;
 }
 
-#filters select:focus{
+.field select:focus{
   border-color: #cbd5e1;
+}
+
+/* Search */
+#searchWrap{
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+}
+
+#searchInput{
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+}
+
+#searchInput:focus{
+  border-color: #cbd5e1;
+}
+
+/* Entries */
+#entries{
+  padding: 14px 18px 18px 18px;
+  overflow-y: auto;
 }
 
 /* Entry cards */
@@ -126,7 +181,7 @@ body{
 
 .entry a{
   display: inline-block;
-  font-weight: 650;
+  font-weight: 700;
   text-decoration: none;
   color: var(--text);
   letter-spacing: -0.01em;
@@ -142,7 +197,6 @@ body{
   color: var(--muted);
 }
 
-/* Small helpers */
 p{
   margin: 0;
   color: var(--muted);
