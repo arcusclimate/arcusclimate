@@ -22,11 +22,36 @@
         </p>
       </div>
 
+      <div id="stats">
+        <div class="stat">
+          <div class="statLabel">States with activity</div>
+          <div class="statValue" id="statStates">—</div>
+        </div>
+        <div class="stat">
+          <div class="statLabel">Entries (filtered)</div>
+          <div class="statValue" id="statEntries">—</div>
+        </div>
+      </div>
+
       <div id="filters">
-        <label for="categoryFilter">Category</label>
-        <select id="categoryFilter">
-          <option value="">All</option>
-        </select>
+        <div class="field">
+          <label for="categoryFilter">Category</label>
+          <select id="categoryFilter">
+            <option value="">All</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="sortOrder">Sort</label>
+          <select id="sortOrder">
+            <option value="desc">Newest</option>
+            <option value="asc">Oldest</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="searchWrap">
+        <input id="searchInput" type="text" placeholder="Search titles & summaries…" />
       </div>
 
       <div id="entries"></div>
