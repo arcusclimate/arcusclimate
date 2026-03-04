@@ -44,36 +44,55 @@ map.on("load", async () => {
   // -------------------
   // LOAD ISO FROM MAPBOX TILESET
   // -------------------
-  map.addSource("iso", {
-    type: "vector",
-    url: "mapbox://arcusclimate.7zboucdg"
-  });
+map.addSource("iso", {
+  type: "vector",
+  url: "mapbox://arcusclimate.7zboucdg",
+});
 
-  map.addLayer({
-    id: "iso-fill",
-    type: "fill",
-    source: "iso",
-    "source-layer": "iso-rto-bcdqwz",
-    paint: {
-      "fill-color": "#93c5fd",
-      "fill-opacity": 0.4
-    }
-  });
+// Polygon fill (only draws if features are polygons)
+map.addLayer({
+  id: "iso-fill",
+  type: "fill",
+  source: "iso",
+  "source-layer": "iso-rto-bcdqwz",
+  filter: ["==", ["geometry-type"], "Polygon"],
+  paint: {
+    "fill-color": "#93c5fd",
+    "fill-opacity": 0.35,
+  },
+});
 
-  map.addLayer({
-    id: "iso-outline",
-    type: "line",
-    source: "iso",
-    "source-layer": "iso-rto-bcdqwz",
-    paint: {
-      "line-color": "#1e3a8a",
-      "line-width": 1
-    }
-  });
+// Line outline (draws polygon borders OR line features)
+map.addLayer({
+  id: "iso-line",
+  type: "line",
+  source: "iso",
+  "source-layer": "iso-rto-bcdqwz",
+  paint: {
+    "line-color": "#1e3a8a",
+    "line-width": 2,
+  },
+});
 
-  // Start with ISO hidden
-  map.setLayoutProperty("iso-fill", "visibility", "none");
-  map.setLayoutProperty("iso-outline", "visibility", "none");
+// Points (only draws if features are points)
+map.addLayer({
+  id: "iso-point",
+  type: "circle",
+  source: "iso",
+  "source-layer": "iso-rto-bcdqwz",
+  filter: ["==", ["geometry-type"], "Point"],
+  paint: {
+    "circle-radius": 5,
+    "circle-color": "#ef4444",
+    "circle-stroke-color": "#7f1d1d",
+    "circle-stroke-width": 1,
+  },
+});
+
+// Start with ISO hidden (if you're using a toggle)
+map.setLayoutProperty("iso-fill", "visibility", "visible");
+map.setLayoutProperty("iso-line", "visibility", "visible");
+map.setLayoutProperty("iso-point", "visibility", "visible");
 
   // -------------------
   // DROPDOWN TOGGLE
