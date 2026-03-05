@@ -473,9 +473,6 @@ async function init() {
       map.getCanvas().style.cursor = "";
     });
 
-    map.on("click", "states-fill", (e) => {
-      if (viewMode !== "state") return;
-      if (!e.features?.length) return;
 
       const f = e.features[0];
       const name = f.properties?.name || f.properties?.NAME;
@@ -536,6 +533,71 @@ async function init() {
       map.setFeatureState({ source: "iso", sourceLayer: ISO_SOURCE_LAYER, id }, { hover: true });
     });
 
+
+// --- Click handler (works even if another layer sits on top) ---
+map.on("click", (e) => {
+  if (viewMode === "state") {
+    const feats = map.queryRenderedFeatures(e.point, { layers: ["states-fill"] });
+    if (!feats.length) return;
+
+    const f = feats[0];
+    const name = f.properties?.name || f.properties?.NAME;
+    if (!name) return;
+
+    selectedState = String(name);
+    selectedIso = null;
+
+    // clear previous selected
+    if (window.__lastSelectedStateId !== undefined && window.__lastSelectedStateId !== null) {
+      map.setFeatureState({ source: "states", id: window.__lastSelectedStateId }, { selected: false });
+    }
+
+    window.__lastSelectedStateId = f.id;
+    map.setFeatureState({ source: "states", id: f.id }, { selected: true });
+
+    render();
+    return;
+  }
+
+  if (viewMode === "iso") {
+    const feats = map.queryRenderedFeatures(e.point, { layers: ["iso-fill"] });
+    if (!feats.length) return;
+
+    const f = feats[0];
+    const name = f.properties?.NAME || f.properties?.name;
+    if (!name) return;
+
+    selectedIso = String(name);
+    selectedState = null;
+
+    // feature id helper
+    const id =
+      f.id ??
+      f.properties?.OBJECTID ??
+      f.properties?.ID ??
+      f.properties?.GlobalID ??
+      f.properties?.NAME ??
+      null;
+
+    // clear previous selected iso
+    if (window.__lastSelectedIsoId !== undefined && window.__lastSelectedIsoId !== null) {
+      map.setFeatureState(
+        { source: "iso", sourceLayer: ISO_SOURCE_LAYER, id: window.__lastSelectedIsoId },
+        { selected: false }
+      );
+    }
+
+    window.__lastSelectedIsoId = id;
+
+    if (id !== null) {
+      map.setFeatureState({ source: "iso", sourceLayer: ISO_SOURCE_LAYER, id }, { selected: true });
+    }
+
+    render();
+    return;
+  }
+});
+   
     map.on("mouseleave", "iso-fill", () => {
       if (hoveredIsoId !== null && map.getSource("iso")) {
         map.setFeatureState(
@@ -546,10 +608,6 @@ async function init() {
       hoveredIsoId = null;
       map.getCanvas().style.cursor = "";
     });
-
-    map.on("click", "iso-fill", (e) => {
-      if (viewMode !== "iso") return;
-      if (!e.features?.length) return;
 
       const f = e.features[0];
       const name = f.properties?.NAME || f.properties?.name;
