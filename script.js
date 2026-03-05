@@ -1,699 +1,427 @@
-/* =========================
-   Arcus Map — script.js
-   State + ISO/RTO views
-   ========================= */
-
-/** 1) CONFIG **/
-mapboxgl.accessToken = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg";
-
-// Your ISO/RTO tileset (you gave this)
-const ISO_TILESET_URL = "mapbox://arcusclimate.7zboucdg";
-const ISO_SOURCE_LAYER = "iso-rto-bcdqwz";
-
-// State boundaries in your repo
-const STATES_GEOJSON_URL = "/data/us-states.geojson";
-
-// Airtable entries API (your Vercel function)
-const ENTRIES_API_URL = "/api/entries";
-
-// Category options (easy to change later)
-const CATEGORY_OPTIONS = [
-  "All",
-  "Moratorium",
-  "Permitting / Siting",
-  "Grid / Interconnection",
-  "Clean Energy",
-  "Disclosure / Reporting",
-  "Incentives",
-  "Other",
-];
-
-function safeSetVisibility(layerId, visible) {
-  if (!map.getLayer(layerId)) return;
-  map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
+/* global mapboxgl */
+const MAPBOX_TOKEN = window.MAPBOX_TOKEN;
+if (!MAPBOX_TOKEN || MAPBOX_TOKEN.includes("pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg")) {
+  console.warn("Mapbox token missing. Set window.MAPBOX_TOKEN in index.html.");
 }
 
-/** 2) DOM HELPERS **/
-const $ = (sel) => document.querySelector(sel);
+mapboxgl.accessToken = MAPBOX_TOKEN;
 
-const el = {
-  map: $("#map"),
-  title: $("#region-title"),
-  entries: $("#entries"),
-
-  viewSelect: $("#viewSelect"),
-  categorySelect: $("#categorySelect"),
-  sortSelect: $("#sortSelect"),
-  searchInput: $("#searchInput"),
-
-  statsRegions: $("#statsRegions"),
-  statsEntries: $("#statsEntries"),
+const RISK_COLORS = {
+  "High Risk": "#b91c1c",
+  "Moderate Risk": "#f97316",
+  "Emerging Risk": "#facc15",
+  "Low Risk": "#22c55e",
+  "No Data": "#e5e7eb",
 };
 
-function safeSetText(node, txt) {
-  if (!node) return;
-  node.textContent = txt;
-}
-
-function safeSetHTML(node, html) {
-  if (!node) return;
-  node.innerHTML = html;
-}
-
-/** 3) STATE **/
-let map;
-let entries = []; // all entries from Airtable
-
 let viewMode = "state"; // "state" | "iso"
-let selectedState = null;
-let selectedIso = null;
+let statesGeo = null;
+let isoGeo = null;
 
-let selectedCategory = "All";
-let sortMode = "newest"; // "newest" | "oldest"
-let searchQuery = "";
+let airtableStates = [];
+let airtableEntries = [];
+let filterOptions = [];
 
-// map hover ids
 let hoveredStateId = null;
-let hoveredIsoId = null;
 
-function normalize(s) {
-  return String(s || "").trim();
+const ui = {
+  btnViewState: document.getElementById("btnViewState"),
+  btnViewIso: document.getElementById("btnViewIso"),
+  stateSearch: document.getElementById("stateSearch"),
+
+  filterCategory: document.getElementById("filterCategory"),
+  filterImpact: document.getElementById("filterImpact"),
+  filterType: document.getElementById("filterType"),
+  filterDirection: document.getElementById("filterDirection"),
+  filterSignalCategory: document.getElementById("filterSignalCategory"),
+
+  btnClear: document.getElementById("btnClear"),
+
+  panel: document.getElementById("panel"),
+  panelClose: document.getElementById("panelClose"),
+  panelState: document.getElementById("panelState"),
+  panelMeta: document.getElementById("panelMeta"),
+  panelTopSignals: document.getElementById("panelTopSignals"),
+  panelEntries: document.getElementById("panelEntries"),
+  panelEntriesHint: document.getElementById("panelEntriesHint"),
+};
+
+const map = new mapboxgl.Map({
+  container: "map",
+  style: "mapbox://styles/mapbox/light-v11",
+  center: [-98.5, 39.8],
+  zoom: 3.25,
+});
+
+map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-left");
+
+function safeStr(v) {
+  if (v == null) return "";
+  if (Array.isArray(v)) return v.join(", ");
+  return String(v);
 }
 
-function parseDate(d) {
-  // supports "YYYY-MM-DD" (your Airtable field)
-  const t = Date.parse(d);
-  return Number.isFinite(t) ? t : 0;
+function normalizeStateName(name) {
+  return (name || "").trim();
 }
 
-/** 4) ENTRY FIELD LOGIC **/
-function getEntryCategory(e) {
-  // You might have Category in Airtable later; default to "Other"
-  return normalize(e.Category || e.category || e.Type || "Other");
+function parseTopSignals(value) {
+  // Rollup could be an array or a comma-delimited string
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter(Boolean);
+  // Airtable sometimes returns as "a, b, c"
+  return String(value)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
-// This is the key: support the 4 types you listed
-// - State-specific (State = "Virginia")
-// - ISO-specific (ISO = "PJM")
-// - Federal (no State, no ISO)
-// - Multi-state (State = "Virginia, Maryland" or similar)
-function getEntryScope(e) {
-  const state = normalize(e.State);
-  const iso = normalize(e.ISO || e.Iso || e.RTO || e["ISO/RTO"]);
-
-  if (iso) return "iso";
-  if (!state) return "federal";
-
-  // crude multi-state detection (comma-separated)
-  if (state.includes(",")) return "multi";
-
-  return "state";
+function getCurrentFilters() {
+  return {
+    q: ui.stateSearch.value.trim().toLowerCase(),
+    category: ui.filterCategory.value,
+    impact: ui.filterImpact.value,
+    type: ui.filterType.value,
+    direction: ui.filterDirection.value,
+    signalCategory: ui.filterSignalCategory.value,
+  };
 }
 
-function entryMatchesSelection(e) {
-  const scope = getEntryScope(e);
+function entryMatchesFilters(entry, filters) {
+  const fkeys = (entry.filterKeys || "").toLowerCase();
 
-  if (viewMode === "state") {
-    if (!selectedState) return false;
+  if (filters.category && !fkeys.includes(filters.category.toLowerCase())) return false;
+  if (filters.impact && !fkeys.includes(filters.impact.toLowerCase())) return false;
+  if (filters.type && !fkeys.includes(filters.type.toLowerCase())) return false;
+  if (filters.direction && !fkeys.includes(filters.direction.toLowerCase())) return false;
 
-    if (scope === "state") {
-      return normalize(e.State).toLowerCase() === selectedState.toLowerCase();
-    }
-
-    if (scope === "multi") {
-      // treat comma-separated as "includes"
-      const parts = normalize(e.State)
-        .split(",")
-        .map((x) => x.trim().toLowerCase())
-        .filter(Boolean);
-      return parts.includes(selectedState.toLowerCase());
-    }
-
-    // federal + iso don't show when user clicked a state (unless you want them to)
-    return false;
+  if (filters.signalCategory) {
+    // Signal Category is computed; we also include it in filtering directly
+    if ((entry.signalCategory || "") !== filters.signalCategory) return false;
   }
+  return true;
+}
 
-  // ISO view
-  if (viewMode === "iso") {
-    if (!selectedIso) return false;
+function buildOptionsSelect(selectEl, label, values) {
+  selectEl.innerHTML = "";
+  const optAll = document.createElement("option");
+  optAll.value = "";
+  optAll.textContent = `All ${label}`;
+  selectEl.appendChild(optAll);
 
-    if (scope === "iso") {
-      const iso = normalize(e.ISO || e.Iso || e.RTO || e["ISO/RTO"]).toLowerCase();
-      return iso === selectedIso.toLowerCase();
-    }
-
-    // optional: also show federal when ISO selected? (off by default)
-    return false;
+  for (const v of values) {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = v;
+    selectEl.appendChild(opt);
   }
-
-  return false;
 }
 
-function entryMatchesCategory(e) {
-  if (selectedCategory === "All") return true;
-  return getEntryCategory(e).toLowerCase() === selectedCategory.toLowerCase();
+function applyViewMode() {
+  const showStates = viewMode === "state";
+  const showIso = viewMode === "iso";
+
+  const vis = (layerId, on) => {
+    if (!map.getLayer(layerId)) return;
+    map.setLayoutProperty(layerId, "visibility", on ? "visible" : "none");
+  };
+
+  vis("states-fill", showStates);
+  vis("states-outline", showStates);
+
+  vis("iso-fill", showIso);
+  vis("iso-line", showIso);
+
+  ui.btnViewState.classList.toggle("segmented__btn--active", showStates);
+  ui.btnViewIso.classList.toggle("segmented__btn--active", showIso);
 }
 
-function entryMatchesSearch(e) {
-  if (!searchQuery) return true;
-  const q = searchQuery.toLowerCase();
-
-  const title = normalize(e.Title).toLowerCase();
-  const summary = normalize(e.Summary).toLowerCase();
-  const link = normalize(e.Link).toLowerCase();
-
-  return title.includes(q) || summary.includes(q) || link.includes(q);
+function openPanel() {
+  ui.panel.classList.remove("panel--hidden");
+}
+function closePanel() {
+  ui.panel.classList.add("panel--hidden");
 }
 
-function getFilteredEntries() {
-  const filtered = entries
-    .filter(entryMatchesSelection)
-    .filter(entryMatchesCategory)
-    .filter(entryMatchesSearch);
-
-  filtered.sort((a, b) => {
-    const da = parseDate(a.Date);
-    const db = parseDate(b.Date);
-    return sortMode === "oldest" ? da - db : db - da;
-  });
-
-  return filtered;
+function badge(text) {
+  return `<span class="badge">${text}</span>`;
 }
 
-/** 5) SIDEBAR RENDER **/
-function renderStats(filtered) {
-  // Regions with activity = 1 (selected region) for now; could be expanded later
-  const regionCount = (viewMode === "state" && selectedState) || (viewMode === "iso" && selectedIso) ? 1 : 0;
-  safeSetText(el.statsRegions, String(regionCount));
-  safeSetText(el.statsEntries, String(filtered.length));
-}
+function renderPanelForState(stateName) {
+  const filters = getCurrentFilters();
+  const st = airtableStates.find((s) => s.state === stateName);
 
-function entryCard(e) {
-  const title = normalize(e.Title) || "(Untitled)";
-  const summary = normalize(e.Summary);
-  const link = normalize(e.Link);
-  const date = normalize(e.Date);
-  const cat = getEntryCategory(e);
+  const risk = st?.calculatedRiskLevel || "No Data";
+  const count = st?.entryCount ?? 0;
+  const score = st?.riskScoreTotal ?? 0;
 
-  const linkHtml = link
-    ? `<a class="entry-title" href="${link}" target="_blank" rel="noopener noreferrer">${escapeHtml(
-        title
-      )}</a>`
-    : `<div class="entry-title">${escapeHtml(title)}</div>`;
+  ui.panelState.textContent = stateName;
+  ui.panelMeta.textContent = `Calculated risk: ${risk} • Signals: ${count} • Score: ${score}`;
 
-  return `
-    <div class="entry-card">
-      ${linkHtml}
-      ${summary ? `<div class="entry-summary">${escapeHtml(summary)}</div>` : ""}
-      <div class="entry-meta">
-        ${date ? `<span class="pill">${escapeHtml(date)}</span>` : ""}
-        ${cat ? `<span class="pill">${escapeHtml(cat)}</span>` : ""}
-      </div>
-    </div>
-  `;
-}
-
-function escapeHtml(str) {
-  return String(str || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function renderSidebar() {
-  const filtered = getFilteredEntries();
-  renderStats(filtered);
-
-  if (viewMode === "state") {
-    safeSetText(el.title, selectedState ? selectedState : "Select a State");
+  // Top signals (rollup)
+  ui.panelTopSignals.innerHTML = "";
+  const topSignals = st?.topRiskSignals || [];
+  if (topSignals.length === 0) {
+    ui.panelTopSignals.innerHTML = `<li class="hint">No top signals yet for this state.</li>`;
   } else {
-    safeSetText(el.title, selectedIso ? selectedIso : "Select an ISO / RTO");
+    for (const s of topSignals) {
+      const li = document.createElement("li");
+      li.textContent = s;
+      ui.panelTopSignals.appendChild(li);
+    }
   }
 
-  if (!((viewMode === "state" && selectedState) || (viewMode === "iso" && selectedIso))) {
-    safeSetHTML(
-      el.entries,
-      `<div class="empty-state">Click a region to see Arcus-tracked laws, articles, and updates.</div>`
-    );
-    return;
-  }
-
-  if (filtered.length === 0) {
-    safeSetHTML(el.entries, `<div class="empty-state">No entries match your filters.</div>`);
-    return;
-  }
-
-  safeSetHTML(el.entries, filtered.map(entryCard).join(""));
-}
-
-function render() {
-  renderSidebar();
-}
-
-/** 6) CONTROLS **/
-function populateCategorySelect() {
-  if (!el.categorySelect) return;
-
-  // If your Airtable has categories already, you can auto-build this later.
-  el.categorySelect.innerHTML = CATEGORY_OPTIONS.map(
-    (c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`
-  ).join("");
-  el.categorySelect.value = selectedCategory;
-}
-
-function wireControls() {
-  populateCategorySelect();
-
-  if (el.viewSelect) {
-    el.viewSelect.value = viewMode === "iso" ? "iso" : "state";
-    el.viewSelect.addEventListener("change", () => {
-      viewMode = el.viewSelect.value === "iso" ? "iso" : "state";
-
-      // clear selection when switching modes
-      selectedState = null;
-      selectedIso = null;
-
-      clearFeatureStates();
-      setLayerVisibility();
-      render();
+  // Matching entries under filters
+  const matching = airtableEntries
+    .filter((e) => e.state === stateName)
+    .filter((e) => entryMatchesFilters(e, filters))
+    .sort((a, b) => {
+      // Best-effort: Impact Rank asc, then date desc
+      const ar = a.impactRank ?? 99;
+      const br = b.impactRank ?? 99;
+      if (ar !== br) return ar - br;
+      return (b.publishedDate || "").localeCompare(a.publishedDate || "");
     });
+
+  ui.panelEntriesHint.textContent =
+    matching.length === 0
+      ? "No entries match your current filters."
+      : `${matching.length} entry(s) match your current filters.`;
+
+  ui.panelEntries.innerHTML = "";
+  for (const e of matching.slice(0, 50)) {
+    const li = document.createElement("li");
+
+    const top = [
+      badge(e.category || "—"),
+      badge(e.impact || "—"),
+      badge(e.signalType || "—"),
+      badge(e.signalDirection || "—"),
+      badge(e.signalCategory || "—"),
+    ].join(" ");
+
+    li.innerHTML = `
+      <div class="entry__top">${top}</div>
+      <div><a href="${e.url}" target="_blank" rel="noopener">${e.title}</a></div>
+      <div class="hint">${e.publishedDate || ""}</div>
+    `;
+    ui.panelEntries.appendChild(li);
   }
 
-  if (el.categorySelect) {
-    el.categorySelect.addEventListener("change", () => {
-      selectedCategory = el.categorySelect.value || "All";
-      render();
-    });
+  openPanel();
+}
+
+function setStateFillByRisk() {
+  if (!map.getLayer("states-fill")) return;
+
+  map.setPaintProperty("states-fill", "fill-color", [
+    "match",
+    ["get", "riskLevel"],
+    "High Risk", RISK_COLORS["High Risk"],
+    "Moderate Risk", RISK_COLORS["Moderate Risk"],
+    "Emerging Risk", RISK_COLORS["Emerging Risk"],
+    "Low Risk", RISK_COLORS["Low Risk"],
+    RISK_COLORS["No Data"],
+  ]);
+
+  map.setPaintProperty("states-fill", "fill-opacity", [
+    "case",
+    ["boolean", ["feature-state", "hover"], false],
+    0.85,
+    0.70,
+  ]);
+}
+
+async function loadAllData() {
+  // Load geojsons
+  const [statesRes, isoRes, stRes, enRes, optRes] = await Promise.all([
+    fetch("./data/us-states.geojson"),
+    fetch("./iso-rto.geojson"),
+    fetch("/api/states"),
+    fetch("/api/entries"),
+    fetch("/api/options"),
+  ]);
+
+  statesGeo = await statesRes.json();
+  isoGeo = await isoRes.json();
+
+  const stJson = await stRes.json();
+  const enJson = await enRes.json();
+  const optJson = await optRes.json();
+
+  airtableStates = stJson.states || [];
+  airtableEntries = enJson.entries || [];
+  filterOptions = optJson.options || [];
+
+  // Build select filters from options table (preferred), else fallback to observed values.
+  const group = (g) =>
+    filterOptions
+      .filter((o) => o.group === g && o.active)
+      .sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999))
+      .map((o) => o.option);
+
+  const categories = group("Category");
+  const impacts = group("Impact Level");
+  const types = group("Signal Type");
+  const directions = group("Signal Direction");
+
+  buildOptionsSelect(ui.filterCategory, "Categories", categories.length ? categories : [...new Set(airtableEntries.map(e => e.category).filter(Boolean))].sort());
+  buildOptionsSelect(ui.filterImpact, "Impacts", impacts.length ? impacts : [...new Set(airtableEntries.map(e => e.impact).filter(Boolean))].sort());
+  buildOptionsSelect(ui.filterType, "Types", types.length ? types : [...new Set(airtableEntries.map(e => e.signalType).filter(Boolean))].sort());
+  buildOptionsSelect(ui.filterDirection, "Directions", directions.length ? directions : [...new Set(airtableEntries.map(e => e.signalDirection).filter(Boolean))].sort());
+
+  buildOptionsSelect(ui.filterSignalCategory, "Signal Categories", ["Risk", "Neutral", "Positive"]);
+
+  // Join state intelligence onto geojson features by NAME
+  const byName = new Map(airtableStates.map((s) => [s.state, s]));
+
+  for (const f of statesGeo.features) {
+    const name = normalizeStateName(f.properties?.NAME);
+    const st = byName.get(name);
+
+    f.properties.riskLevel = st?.calculatedRiskLevel || "No Data";
+    f.properties.riskScoreTotal = st?.riskScoreTotal ?? 0;
+    f.properties.entryCount = st?.entryCount ?? 0;
+    f.properties.topRiskSignals = (st?.topRiskSignals || []).join(" | ");
   }
-
-  if (el.sortSelect) {
-    // expects option values: "newest" / "oldest"
-    el.sortSelect.value = sortMode;
-    el.sortSelect.addEventListener("change", () => {
-      sortMode = el.sortSelect.value === "oldest" ? "oldest" : "newest";
-      render();
-    });
-  }
-
-  if (el.searchInput) {
-    el.searchInput.addEventListener("input", () => {
-      searchQuery = normalize(el.searchInput.value);
-      render();
-    });
-  }
 }
 
-/** 7) MAP: LAYERS + VISIBILITY **/
-function layerExists(id) {
-  // mapbox map might not be ready yet
-  if (!window.__arcusMap) return false;
-  return !!window.__arcusMap.getLayer(id);
-}
-
-function setLayerVisibility(id, visible) {
-  if (!window.__arcusMap) return;
-  if (!layerExists(id)) return;
-  window.__arcusMap.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
-}
-
-// Call this any time the dropdown changes
-function applyViewMode(viewMode) {
-  // STATES
-  setLayerVisibility("states-fill", viewMode === "state");
-  setLayerVisibility("states-outline", viewMode === "state");
-
-  // ISO (these must match the ids you used in map.addLayer)
-  setLayerVisibility("iso-fill", viewMode === "iso");
-  setLayerVisibility("iso-line", viewMode === "iso");
-  setLayerVisibility("iso-point", viewMode === "iso");
-}
-
-/** 8) LOAD ENTRIES **/
-async function loadEntries() {
-  const res = await fetch(ENTRIES_API_URL);
-  const data = await res.json();
-
-  // expected shape from your API:
-  // [{ Title, Summary, Link, Date, State, Status, ISO?, Category? }, ...]
-  entries = Array.isArray(data) ? data : [];
-}
-
-/** 9) INIT MAP **/
-async function init() {
-  wireControls();
-  await loadEntries();
-
-  const map = new mapboxgl.Map({
-    container: "map",
-    style: "mapbox://styles/mapbox/light-v11",
-    center: [-98.5, 39.8],
-    zoom: 3,
+function wireUI() {
+  ui.btnViewState.addEventListener("click", () => {
+    viewMode = "state";
+    applyViewMode();
+  });
+  ui.btnViewIso.addEventListener("click", () => {
+    viewMode = "iso";
+    applyViewMode();
   });
 
-  map.addControl(new mapboxgl.NavigationControl(), "top-right");
-
-  map.on("load", async () => {
-    // --- Load State boundaries (GeoJSON) ---
-    const states = await fetch(STATES_GEOJSON_URL).then((r) => r.json());
-    states.features.forEach((f, idx) => (f.id = idx));
-
-    map.addSource("states", { type: "geojson", data: states });
-      type: "geojson",
-  data: "us-states.geojson",   // or your path (maybe /data/us-states.geojson)
-  promoteId: "STATE"           // uses the 2-digit FIPS as the feature id
-});
-
-    map.addLayer({
-      id: "states-fill",
-      type: "fill",
-      source: "states",
-      paint: {
-        "fill-color": [
-          "case",
-          ["boolean", ["feature-state", "selected"], false], "#111827",
-          ["boolean", ["feature-state", "hover"], false], "#374151",
-          "#e5e7eb"
-        ],
-        "fill-opacity": 0.18,
-      },
-    });
-
-    map.addLayer({
-      id: "states-outline",
-      type: "line",
-      source: "states",
-      paint: { "line-color": "#94a3b8", "line-width": 1 },
-    });
-
-// --- Wire up the View dropdown (State vs ISO/RTO) ---
-const viewSelect =
-  document.getElementById("viewSelect") ||
-  document.getElementById("viewMode") ||
-  document.getElementById("view") ||
-  document.querySelector('select[name="view"]');
-
-if (viewSelect) {
-  viewSelect.addEventListener("change", () => {
-    const v = viewSelect.value;
-
-    // supports either values: "state"/"iso" OR labels like "ISO / RTO"
-    viewMode = (v === "iso" || v === "ISO / RTO") ? "iso" : "state";
-
-    // clear selections when switching modes
-    selectedStateId = null;
-    selectedIsoId = null;
-
-    setLayerVisibility();
-    render(); // or whatever your refresh function is called
+  ui.btnClear.addEventListener("click", () => {
+    ui.stateSearch.value = "";
+    ui.filterCategory.value = "";
+    ui.filterImpact.value = "";
+    ui.filterType.value = "";
+    ui.filterDirection.value = "";
+    ui.filterSignalCategory.value = "";
+    // panel refresh if open
+    if (!ui.panel.classList.contains("panel--hidden")) {
+      const current = ui.panelState.textContent;
+      if (current) renderPanelForState(current);
+    }
   });
-} else {
-  console.warn("View dropdown not found. Add an id to the View <select> (e.g., id='viewMode').");
+
+  const refreshPanelIfOpen = () => {
+    if (ui.panel.classList.contains("panel--hidden")) return;
+    const current = ui.panelState.textContent;
+    if (current) renderPanelForState(current);
+  };
+
+  ui.stateSearch.addEventListener("input", refreshPanelIfOpen);
+  ui.filterCategory.addEventListener("change", refreshPanelIfOpen);
+  ui.filterImpact.addEventListener("change", refreshPanelIfOpen);
+  ui.filterType.addEventListener("change", refreshPanelIfOpen);
+  ui.filterDirection.addEventListener("change", refreshPanelIfOpen);
+  ui.filterSignalCategory.addEventListener("change", refreshPanelIfOpen);
+
+  ui.panelClose.addEventListener("click", closePanel);
 }
-     
-    // --- ISO / RTO (Mapbox tileset vector) ---
-    map.addSource("iso", {
-      type: "vector",
-      url: ISO_TILESET_URL,
-    });
 
-map.addLayer({
-  id: "iso-fill",
-  type: "fill",
-  source: "iso",
-  "source-layer": ISO_SOURCE_LAYER,
-  paint: {
-    "fill-color": [
-      "case",
-      ["boolean", ["feature-state", "selected"], false], "#111827",
-      ["boolean", ["feature-state", "hover"], false], "#374151",
-      "#60a5fa"
-    ],
+map.on("load", async () => {
+  await loadAllData();
 
-    "fill-opacity": [
-      "interpolate",
-      ["linear"],
-      ["zoom"],
+  // Sources
+  map.addSource("states", { type: "geojson", data: statesGeo, generateId: true });
+  map.addSource("iso", { type: "geojson", data: isoGeo });
 
-      3,
-      ["case",
-        ["boolean", ["feature-state", "selected"], false], 0.18,
-        ["boolean", ["feature-state", "hover"], false], 0.14,
-        0.08
+  // States layers
+  map.addLayer({
+    id: "states-fill",
+    type: "fill",
+    source: "states",
+    paint: {
+      "fill-color": "#e5e7eb",
+      "fill-opacity": 0.70,
+    },
+  });
+
+  map.addLayer({
+    id: "states-outline",
+    type: "line",
+    source: "states",
+    paint: {
+      "line-color": "#9ca3af",
+      "line-width": [
+        "case",
+        ["boolean", ["feature-state", "selected"], false],
+        2.5,
+        1,
       ],
+      "line-opacity": 0.9,
+    },
+  });
 
-      6,
-      ["case",
-        ["boolean", ["feature-state", "selected"], false], 0.22,
-        ["boolean", ["feature-state", "hover"], false], 0.16,
-        0.10
-      ],
+  // ISO/RTO layers (simple; you can enhance later)
+  map.addLayer({
+    id: "iso-fill",
+    type: "fill",
+    source: "iso",
+    layout: { visibility: "none" },
+    paint: {
+      "fill-color": "#475569",
+      "fill-opacity": 0.08,
+    },
+  });
 
-      9,
-      ["case",
-        ["boolean", ["feature-state", "selected"], false], 0.26,
-        ["boolean", ["feature-state", "hover"], false], 0.18,
-        0.12
-      ],
+  map.addLayer({
+    id: "iso-line",
+    type: "line",
+    source: "iso",
+    layout: { visibility: "none" },
+    paint: {
+      "line-color": "#475569",
+      "line-width": 2,
+      "line-opacity": 0.9,
+    },
+  });
 
-      12,
-      ["case",
-        ["boolean", ["feature-state", "selected"], false], 0.30,
-        ["boolean", ["feature-state", "hover"], false], 0.20,
-        0.14
-      ]
-    ]
-  }
-});
+  setStateFillByRisk();
+  applyViewMode();
+  wireUI();
 
-    map.addLayer({
-      id: "iso-line",
-      type: "line",
-      source: "iso",
-      "source-layer": ISO_SOURCE_LAYER,
-      minzoom: 0,
-      maxzoom: 22,
-      layout: { visibility: "none" },
-      paint: {
-        "line-color": "#1d4ed8",
-        "line-opacity": 0.9,
-        "line-width": [
-          "interpolate",
-          ["linear"],
-          ["zoom"],
-          0, 0.8,
-          3, 1.2,
-          6, 1.8,
-          9, 2.6,
-          12, 3.6
-        ],
-      },
-    });
+  // Hover state
+  map.on("mousemove", "states-fill", (e) => {
+    map.getCanvas().style.cursor = "pointer";
+    if (!e.features?.length) return;
 
-    // start in State view
-    setLayerVisibility();
-    render();
+    const f = e.features[0];
+    const id = f.id;
 
-    // --- State interactions ---
-    map.on("mousemove", "states-fill", (e) => {
-      if (viewMode !== "state") return;
-      map.getCanvas().style.cursor = "pointer";
-      if (!e.features?.length) return;
-
-      const f = e.features[0];
-      const id = f.id;
-
-      if (hoveredStateId !== null && hoveredStateId !== id) {
-        map.setFeatureState({ source: "states", id: hoveredStateId }, { hover: false });
-      }
-
-      hoveredStateId = id;
-      map.setFeatureState({ source: "states", id }, { hover: true });
-    });
-
-    map.on("mouseleave", "states-fill", () => {
-      if (hoveredStateId !== null && map.getSource("states")) {
-        map.setFeatureState({ source: "states", id: hoveredStateId }, { hover: false });
-      }
-      hoveredStateId = null;
-      map.getCanvas().style.cursor = "";
-    });
-
-
-      const f = e.features[0];
-      const name = f.properties?.name || f.properties?.NAME;
-      if (!name) return;
-
-      // clear previous selection (optional)
-      // easiest: just redraw selected by clearing all selected flags
-      // but geojson has many features, so we’ll only set selected on current feature
-      // and clear previously selected by scanning selectedState
-      selectedState = name;
-      selectedIso = null;
-
-      // Clear all hover
-      clearFeatureStates();
-
-      // Set selected flag on clicked feature
-      // (We cannot easily clear previous selected without tracking its id; so we track selected id by state name)
-      // We'll brute force by clearing previously selected via storing lastSelectedStateId:
-      if (window.__lastSelectedStateId !== undefined && window.__lastSelectedStateId !== null) {
-        map.setFeatureState({ source: "states", id: window.__lastSelectedStateId }, { selected: false });
-      }
-      window.__lastSelectedStateId = f.id;
-      map.setFeatureState({ source: "states", id: f.id }, { selected: true });
-
-      render();
-    });
-
-    // --- ISO interactions ---
-    function isoFeatureId(feat) {
-      // vector tiles often have `id`, otherwise use an attribute that looks stable
-      return (
-        feat.id ??
-        feat.properties?.OBJECTID ??
-        feat.properties?.ID ??
-        feat.properties?.GlobalID ??
-        feat.properties?.NAME ??
-        null
-      );
+    if (hoveredStateId !== null && hoveredStateId !== id) {
+      map.setFeatureState({ source: "states", id: hoveredStateId }, { hover: false });
     }
+    hoveredStateId = id;
+    map.setFeatureState({ source: "states", id }, { hover: true });
+  });
 
-    map.on("mousemove", "iso-fill", (e) => {
-      if (viewMode !== "iso") return;
-      map.getCanvas().style.cursor = "pointer";
-      if (!e.features?.length) return;
-
-      const f = e.features[0];
-      const id = isoFeatureId(f);
-      if (id === null) return;
-
-      if (hoveredIsoId !== null && hoveredIsoId !== id) {
-        map.setFeatureState(
-          { source: "iso", sourceLayer: ISO_SOURCE_LAYER, id: hoveredIsoId },
-          { hover: false }
-        );
-      }
-
-      hoveredIsoId = id;
-      map.setFeatureState({ source: "iso", sourceLayer: ISO_SOURCE_LAYER, id }, { hover: true });
-    });
-
-
-// --- Click handler (works even if another layer sits on top) ---
-map.on("click", (e) => {
-  if (viewMode === "state") {
-    const feats = map.queryRenderedFeatures(e.point, { layers: ["states-fill"] });
-    if (!feats.length) return;
-
-    const f = feats[0];
-    const name = f.properties?.name || f.properties?.NAME;
-    if (!name) return;
-
-    selectedState = String(name);
-    selectedIso = null;
-
-    // clear previous selected
-    if (window.__lastSelectedStateId !== undefined && window.__lastSelectedStateId !== null) {
-      map.setFeatureState({ source: "states", id: window.__lastSelectedStateId }, { selected: false });
+  map.on("mouseleave", "states-fill", () => {
+    map.getCanvas().style.cursor = "";
+    if (hoveredStateId !== null) {
+      map.setFeatureState({ source: "states", id: hoveredStateId }, { hover: false });
     }
+    hoveredStateId = null;
+  });
 
-    window.__lastSelectedStateId = f.id;
+  // Click → panel
+  map.on("click", "states-fill", (e) => {
+    if (!e.features?.length) return;
+    const f = e.features[0];
+    const name = normalizeStateName(f.properties?.NAME);
+
+    // mark selected (optional)
+    // Clear all selected states by brute-force update: re-set selected on clicked only
+    // (For large feature sets you’d track prevSelected)
     map.setFeatureState({ source: "states", id: f.id }, { selected: true });
 
-    render();
-    return;
-  }
-
-  if (viewMode === "iso") {
-    const feats = map.queryRenderedFeatures(e.point, { layers: ["iso-fill"] });
-    if (!feats.length) return;
-
-    const f = feats[0];
-    const name = f.properties?.NAME || f.properties?.name;
-    if (!name) return;
-
-    selectedIso = String(name);
-    selectedState = null;
-
-    // feature id helper
-    const id =
-      f.id ??
-      f.properties?.OBJECTID ??
-      f.properties?.ID ??
-      f.properties?.GlobalID ??
-      f.properties?.NAME ??
-      null;
-
-    // clear previous selected iso
-    if (window.__lastSelectedIsoId !== undefined && window.__lastSelectedIsoId !== null) {
-      map.setFeatureState(
-        { source: "iso", sourceLayer: ISO_SOURCE_LAYER, id: window.__lastSelectedIsoId },
-        { selected: false }
-      );
-    }
-
-    window.__lastSelectedIsoId = id;
-
-    if (id !== null) {
-      map.setFeatureState({ source: "iso", sourceLayer: ISO_SOURCE_LAYER, id }, { selected: true });
-    }
-
-    render();
-    return;
-  }
-});
-   
-    map.on("mouseleave", "iso-fill", () => {
-      if (hoveredIsoId !== null && map.getSource("iso")) {
-        map.setFeatureState(
-          { source: "iso", sourceLayer: ISO_SOURCE_LAYER, id: hoveredIsoId },
-          { hover: false }
-        );
-      }
-      hoveredIsoId = null;
-      map.getCanvas().style.cursor = "";
-    });
-
-    // ISO click
-    map.on("click", "iso-fill", (e) => {
-      if (viewMode !== "iso") return;
-      if (!e.features || !e.features.length) return;
-
-      const f = e.features[0];
-      const name = f.properties?.NAME || f.properties?.name;
-      if (!name) return;
-
-      selectedIso = String(name);
-      selectedState = null;
-
-      clearFeatureStates();
-
-      // clear previous selected iso
-      if (window.__lastSelectedIsoId !== undefined && window.__lastSelectedIsoId !== null) {
-        map.setFeatureState(
-          { source: "iso", sourceLayer: ISO_SOURCE_LAYER, id: window.__lastSelectedIsoId },
-          { selected: false }
-        );
-      }
-
-      const id = isoFeatureId(f);
-      window.__lastSelectedIsoId = id;
-
-      if (id !== null) {
-        map.setFeatureState(
-          { source: "iso", sourceLayer: ISO_SOURCE_LAYER, id },
-          { selected: true }
-        );
-      }
-
-      render();
-    });
-}
-
-/** 10) BOOT **/
-init().catch((err) => {
-  console.error("Init failed:", err);
-  safeSetHTML(el.entries, `<div class="empty-state">Error: ${escapeHtml(String(err))}</div>`);
+    renderPanelForState(name);
+  });
 });
