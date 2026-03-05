@@ -429,29 +429,54 @@ if (viewSelect) {
       url: ISO_TILESET_URL,
     });
 
-    map.addLayer({
-      id: "iso-fill",
-      type: "fill",
-      source: "iso",
-      "source-layer": ISO_SOURCE_LAYER,
-      minzoom: 0,
-      maxzoom: 22,
-      layout: { visibility: "none" },
-      paint: {
-        "fill-color": [
-          "case",
-          ["boolean", ["feature-state", "selected"], false], "#1d4ed8",
-          ["boolean", ["feature-state", "hover"], false], "#2563eb",
-          "#2563eb"
-        ],
-        "fill-opacity": [
-          "case",
-          ["boolean", ["feature-state", "selected"], false], 0.18,
-          ["boolean", ["feature-state", "hover"], false], 0.12,
-          ["interpolate", ["linear"], ["zoom"], 0, 0.04, 4, 0.06, 7, 0.08, 10, 0.10]
-        ],
-      },
-    });
+map.addLayer({
+  id: "iso-fill",
+  type: "fill",
+  source: "iso",
+  "source-layer": ISO_SOURCE_LAYER,
+  paint: {
+    "fill-color": [
+      "case",
+      ["boolean", ["feature-state", "selected"], false], "#111827",
+      ["boolean", ["feature-state", "hover"], false], "#374151",
+      "#60a5fa"
+    ],
+
+    "fill-opacity": [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+
+      3,
+      ["case",
+        ["boolean", ["feature-state", "selected"], false], 0.18,
+        ["boolean", ["feature-state", "hover"], false], 0.14,
+        0.08
+      ],
+
+      6,
+      ["case",
+        ["boolean", ["feature-state", "selected"], false], 0.22,
+        ["boolean", ["feature-state", "hover"], false], 0.16,
+        0.10
+      ],
+
+      9,
+      ["case",
+        ["boolean", ["feature-state", "selected"], false], 0.26,
+        ["boolean", ["feature-state", "hover"], false], 0.18,
+        0.12
+      ],
+
+      12,
+      ["case",
+        ["boolean", ["feature-state", "selected"], false], 0.30,
+        ["boolean", ["feature-state", "hover"], false], 0.20,
+        0.14
+      ]
+    ]
+  }
+});
 
     map.addLayer({
       id: "iso-line",
