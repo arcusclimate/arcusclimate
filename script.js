@@ -319,13 +319,16 @@ function setLayerVisibility() {
   const showStates = viewMode === "state";
   const showIso = viewMode === "iso";
 
-  // states
+  // STATE layers
   safeSetVisibility("states-fill", showStates);
   safeSetVisibility("states-outline", showStates);
 
-  // iso
+  // ISO layers
   safeSetVisibility("iso-fill", showIso);
   safeSetVisibility("iso-line", showIso);
+
+  // Optional: make clicks feel right
+  map.getCanvas().style.cursor = "";
 }
 
 function clearFeatureStates() {
