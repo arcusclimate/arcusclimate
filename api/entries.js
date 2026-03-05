@@ -1,41 +1,38 @@
+import { airtableList, envOrThrow } from "./_airtable.js";
+
 export default async function handler(req, res) {
   try {
-    const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
-    const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
-    const AIRTABLE_TABLE = process.env.AIRTABLE_TABLE || "Entries";
+    const apiKey = envOrThrow("AIRTABLE_API_KEY");
+    const baseId = envOrThrow("AIRTABLE_BASE_ID");
+    const tableName = process.env.AIRTABLE_ENTRIES_TABLE || "Entries";
+    const viewName = process.env.AIRTABLE_ENTRIES_VIEW || "Map API";
 
-    if (!AIRTABLE_TOKEN || !AIRTABLE_BASE_ID) {
-      return res.status(500).json({ error: "Missing Airtable env vars" });
-    }
+    const records = await airtableList({ baseId, tableName, viewName, apiKey });
 
-    const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(
-      AIRTABLE_TABLE
-    )}?filterByFormula=${encodeURIComponent("{Status}='Published'")}`;
-
-    const r = await fetch(url, {
-      headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` },
+    const entries = records.map((r) => {
+      const f = r.fields || {};
+      return {
+        id: r.id,
+        title: f.Title || "",
+        summary: f.Summary || "",
+        url: f.Link || "",
+        publishedDate: f["Published Date"] || "",
+        state: f["State (from State)"] || f.State || "",
+        status: f.Status || "",
+        category: f["Category (linked)"] ? String(f["Category (linked)"]) : (f.Category || ""),
+        impact: f["Impact Level (linked)"] ? String(f["Impact Level (linked)"]) : (f["Impact Level"] || ""),
+        signalType: f["Signal Type (linked)"] ? String(f["Signal Type (linked)"]) : (f["Signal Type"] || ""),
+        signalDirection: f["Signal Direction (linked)"] ? String(f["Signal Direction (linked)"]) : (f["Signal Direction"] || ""),
+        signalCategory: f["Signal Category"] || "",
+        impactRank: f["Impact Rank"] ?? null,
+        riskScore: f["Risk Score"] ?? null,
+        filterKeys: (f["Filter Keys"] || "").toString(),
+      };
     });
 
-    if (!r.ok) {
-      const text = await r.text();
-      return res.status(r.status).json({ error: text });
-    }
-
-    const data = await r.json();
-
-    const out = (data.records || []).map((rec) => ({
-  Title: rec.fields.Title || "",
-  Summary: rec.fields.Summary || "",
-  Link: rec.fields.Link || "",
-  Date: rec.fields.Date || "",
-  State: rec.fields.State || "",
-  ISO: rec.fields.ISO || "",
-  Status: rec.fields.Status || "",
-  Category: rec.fields.Category || "",
-}));
-
-    return res.status(200).json(out);
+    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
+    return res.status(200).json({ entries });
   } catch (err) {
-    return res.status(500).json({ error: String(err) });
+    return res.status(500).json({ error: String(err?.message || err) });
   }
 }
