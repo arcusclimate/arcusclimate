@@ -360,7 +360,7 @@ async function init() {
   wireControls();
   await loadEntries();
 
-  map = new mapboxgl.Map({
+  const map = new mapboxgl.Map({
     container: "map",
     style: "mapbox://styles/mapbox/light-v11",
     center: [-98.5, 39.8],
@@ -398,6 +398,31 @@ async function init() {
       paint: { "line-color": "#94a3b8", "line-width": 1 },
     });
 
+// --- Wire up the View dropdown (State vs ISO/RTO) ---
+const viewSelect =
+  document.getElementById("viewSelect") ||
+  document.getElementById("viewMode") ||
+  document.getElementById("view") ||
+  document.querySelector('select[name="view"]');
+
+if (viewSelect) {
+  viewSelect.addEventListener("change", () => {
+    const v = viewSelect.value;
+
+    // supports either values: "state"/"iso" OR labels like "ISO / RTO"
+    viewMode = (v === "iso" || v === "ISO / RTO") ? "iso" : "state";
+
+    // clear selections when switching modes
+    selectedStateId = null;
+    selectedIsoId = null;
+
+    setLayerVisibility();
+    render(); // or whatever your refresh function is called
+  });
+} else {
+  console.warn("View dropdown not found. Add an id to the View <select> (e.g., id='viewMode').");
+}
+     
     // --- ISO / RTO (Mapbox tileset vector) ---
     map.addSource("iso", {
       type: "vector",
