@@ -307,42 +307,27 @@ function wireControls() {
 
 /** 7) MAP: LAYERS + VISIBILITY **/
 function layerExists(id) {
-  return !!map.getLayer(id);
+  // mapbox map might not be ready yet
+  if (!window.__arcusMap) return false;
+  return !!window.__arcusMap.getLayer(id);
 }
 
-function safeSetVisibility(layerId, visible) {
-  if (!layerExists(layerId)) return;
-  map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
+function setLayerVisibility(id, visible) {
+  if (!window.__arcusMap) return;
+  if (!layerExists(id)) return;
+  window.__arcusMap.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
 }
 
-function setLayerVisibility() {
-  const showStates = viewMode === "state";
-  const showIso = viewMode === "iso";
+// Call this any time the dropdown changes
+function applyViewMode(viewMode) {
+  // STATES
+  setLayerVisibility("states-fill", viewMode === "state");
+  setLayerVisibility("states-outline", viewMode === "state");
 
-  // STATE layers
-  safeSetVisibility("states-fill", showStates);
-  safeSetVisibility("states-outline", showStates);
-
-  // ISO layers
-  safeSetVisibility("iso-fill", showIso);
-  safeSetVisibility("iso-line", showIso);
-
-  // Optional: make clicks feel right
-  map.getCanvas().style.cursor = "";
-}
-
-function clearFeatureStates() {
-  // clear state hover
-  if (hoveredStateId !== null && map.getSource("states")) {
-    map.setFeatureState({ source: "states", id: hoveredStateId }, { hover: false });
-  }
-  hoveredStateId = null;
-
-  // clear iso hover
-  if (hoveredIsoId !== null && map.getSource("iso")) {
-    map.setFeatureState({ source: "iso", sourceLayer: ISO_SOURCE_LAYER, id: hoveredIsoId }, { hover: false });
-  }
-  hoveredIsoId = null;
+  // ISO (these must match the ids you used in map.addLayer)
+  setLayerVisibility("iso-fill", viewMode === "iso");
+  setLayerVisibility("iso-line", viewMode === "iso");
+  setLayerVisibility("iso-point", viewMode === "iso");
 }
 
 /** 8) LOAD ENTRIES **/
