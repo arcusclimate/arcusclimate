@@ -236,7 +236,7 @@ async function loadAllData() {
   // Load geojsons
   const [statesRes, isoRes, stRes, enRes, optRes] = await Promise.all([
     fetch("./data/us-states.geojson"),
-    fetch("./data/iso-rto.geojson"),
+    fetch("./iso-rto.geojson"),
     fetch("/api/states"),
     fetch("/api/entries"),
     fetch("/api/options"),
