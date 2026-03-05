@@ -1,71 +1,96 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Arcus Infrastructure Atlas</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Arcus — Data Center Signals Map</title>
 
-  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+  <!-- Mapbox GL -->
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="./style.css" />
 </head>
+
 <body>
-  <div id="app">
-    <div id="map"></div>
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand__title">Arcus Map</div>
+      <div class="brand__subtitle">State risk + policy / grid / water / development signals</div>
+    </div>
 
-    <div id="sidebar">
-      <div id="sidebar-header">
-        <h2 id="region-title">Select a State</h2>
-        <p id="sidebar-subtitle">
-          Click a state to see Arcus-tracked laws, articles, and updates.
-        </p>
-      </div>
-
-      <div id="stats">
-        <div class="stat">
-          <div class="statLabel">Regions with activity</div>
-          <div class="statValue" id="statStates">—</div>
-        </div>
-        <div class="stat">
-          <div class="statLabel">Entries (filtered)</div>
-          <div class="statValue" id="statEntries">—</div>
+    <div class="controls">
+      <div class="control">
+        <label>View</label>
+        <div class="segmented">
+          <button id="btnViewState" class="segmented__btn segmented__btn--active">States</button>
+          <button id="btnViewIso" class="segmented__btn">ISO/RTO</button>
         </div>
       </div>
 
-      <div id="filters">
-        <div class="field">
-          <label for="viewMode">View</label>
-          <select id="viewMode">
-            <option value="state">State</option>
-            <option value="iso">ISO / RTO</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label for="categoryFilter">Category</label>
-          <select id="categoryFilter">
-            <option value="">All</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label for="sortOrder">Sort</label>
-          <select id="sortOrder">
-            <option value="desc">Newest</option>
-            <option value="asc">Oldest</option>
-          </select>
-        </div>
+      <div class="control">
+        <label>State</label>
+        <input id="stateSearch" type="text" placeholder="Search (e.g., Virginia)" />
       </div>
 
-      <div id="searchWrap">
-        <input id="searchInput" type="text" placeholder="Search titles & summaries…" />
+      <div class="control">
+        <label>Category</label>
+        <select id="filterCategory"></select>
       </div>
 
-      <div id="entries"></div>
+      <div class="control">
+        <label>Impact</label>
+        <select id="filterImpact"></select>
+      </div>
+
+      <div class="control">
+        <label>Signal Type</label>
+        <select id="filterType"></select>
+      </div>
+
+      <div class="control">
+        <label>Direction</label>
+        <select id="filterDirection"></select>
+      </div>
+
+      <div class="control">
+        <label>Signal Category</label>
+        <select id="filterSignalCategory"></select>
+      </div>
+
+      <div class="control">
+        <button id="btnClear" class="btn">Clear filters</button>
+      </div>
     </div>
   </div>
 
-  <script src="script.js"></script>
+  <div id="map"></div>
+
+  <aside id="panel" class="panel panel--hidden">
+    <div class="panel__header">
+      <div>
+        <div id="panelState" class="panel__title">State</div>
+        <div id="panelMeta" class="panel__meta"></div>
+      </div>
+      <button id="panelClose" class="panel__close" aria-label="Close">✕</button>
+    </div>
+
+    <div class="panel__section">
+      <div class="panel__sectionTitle">Top Risk Signals</div>
+      <ul id="panelTopSignals" class="list"></ul>
+    </div>
+
+    <div class="panel__section">
+      <div class="panel__sectionTitle">Matching Entries</div>
+      <div id="panelEntriesHint" class="hint"></div>
+      <ul id="panelEntries" class="list list--entries"></ul>
+    </div>
+  </aside>
+
+  <script>
+    // Replace with your Mapbox token
+    window.MAPBOX_TOKEN = "PASTE_YOUR_MAPBOX_TOKEN_HERE";
+  </script>
+  <script src="./script.js"></script>
 </body>
 </html>
