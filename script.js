@@ -28,6 +28,11 @@ const CATEGORY_OPTIONS = [
   "Other",
 ];
 
+function safeSetVisibility(layerId, visible) {
+  if (!map.getLayer(layerId)) return;
+  map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
+}
+
 /** 2) DOM HELPERS **/
 const $ = (sel) => document.querySelector(sel);
 
