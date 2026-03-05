@@ -90,9 +90,9 @@ map.addLayer({
 });
 
 // Start with ISO hidden (if you're using a toggle)
-map.setLayoutProperty("iso-fill", "visibility", "visible");
-map.setLayoutProperty("iso-line", "visibility", "visible");
-map.setLayoutProperty("iso-point", "visibility", "visible");
+map.setLayoutProperty("iso-fill", "visibility", "none");
+map.setLayoutProperty("iso-line", "visibility", "none");
+map.setLayoutProperty("iso-point", "visibility", "none");
 
   // -------------------
   // DROPDOWN TOGGLE
@@ -108,13 +108,16 @@ map.setLayoutProperty("iso-point", "visibility", "visible");
         map.setLayoutProperty("states-outline", "visibility", "visible");
 
         map.setLayoutProperty("iso-fill", "visibility", "none");
-        map.setLayoutProperty("iso-outline", "visibility", "none");
+        map.setLayoutProperty("iso-line", "visibility", "none");
+        map.setLayoutProperty("iso-point", "visibility", "none");
       } else {
         map.setLayoutProperty("states-fill", "visibility", "none");
         map.setLayoutProperty("states-outline", "visibility", "none");
 
         map.setLayoutProperty("iso-fill", "visibility", "visible");
-        map.setLayoutProperty("iso-outline", "visibility", "visible");
+        map.setLayoutProperty("iso-line", "visibility", "visible");
+        map.setLayoutProperty("iso-point", "visibility", "visible");
+
       }
     });
   }
