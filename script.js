@@ -642,6 +642,11 @@ map.on("click", (e) => {
       map.getCanvas().style.cursor = "";
     });
 
+    // ISO click
+    map.on("click", "iso-fill", (e) => {
+      if (viewMode !== "iso") return;
+      if (!e.features || !e.features.length) return;
+
       const f = e.features[0];
       const name = f.properties?.NAME || f.properties?.name;
       if (!name) return;
@@ -663,12 +668,14 @@ map.on("click", (e) => {
       window.__lastSelectedIsoId = id;
 
       if (id !== null) {
-        map.setFeatureState({ source: "iso", sourceLayer: ISO_SOURCE_LAYER, id }, { selected: true });
+        map.setFeatureState(
+          { source: "iso", sourceLayer: ISO_SOURCE_LAYER, id },
+          { selected: true }
+        );
       }
 
       render();
     });
-  });
 }
 
 /** 10) BOOT **/
