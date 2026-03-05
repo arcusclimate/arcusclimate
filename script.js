@@ -90,9 +90,9 @@ map.addLayer({
 });
 
 // Start with ISO hidden (if you're using a toggle)
-map.setLayoutProperty("iso-fill", "visibility", "none");
-map.setLayoutProperty("iso-line", "visibility", "none");
-map.setLayoutProperty("iso-point", "visibility", "none");
+map.setLayoutProperty("iso-fill", "visibility", "visible");
+map.setLayoutProperty("iso-line", "visibility", "visible");
+map.setLayoutProperty("iso-point", "visibility", "visible");
 
   // -------------------
   // DROPDOWN TOGGLE
