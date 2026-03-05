@@ -1,4 +1,4 @@
-import { airtableList, envOrThrow } from "./_airtable.js";
+import { airtableList, envOrThrow } from "./_airtable";
 
 export default async function handler(req, res) {
   try {
