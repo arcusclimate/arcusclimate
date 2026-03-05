@@ -360,6 +360,10 @@ async function init() {
     states.features.forEach((f, idx) => (f.id = idx));
 
     map.addSource("states", { type: "geojson", data: states });
+      type: "geojson",
+  data: "us-states.geojson",   // or your path (maybe /data/us-states.geojson)
+  promoteId: "STATE"           // uses the 2-digit FIPS as the feature id
+});
 
     map.addLayer({
       id: "states-fill",
