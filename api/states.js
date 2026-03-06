@@ -18,12 +18,7 @@ export default async function handler(req, res) {
     const tableName = process.env.AIRTABLE_STATES_TABLE || "States";
     const viewName = process.env.AIRTABLE_STATES_VIEW || "Map API";
 
-    const records = await airtableList({
-      baseId,
-      tableName,
-      viewName,
-      apiKey
-    });
+    const records = await airtableList({ baseId, tableName, viewName, apiKey });
 
     const states = records.map((record) => {
       const f = record.fields || {};
@@ -31,14 +26,11 @@ export default async function handler(req, res) {
       return {
         id: record.id,
         state: firstValue(f.State),
-        calculatedRiskLevel: firstValue(f["Calculated Risk Level"]) || firstValue(f["Risk Level"]) || "No Data",
+        calculatedRiskLevel: firstValue(f["Calculated Risk Level"]) || "No Data",
         riskScoreTotal: Number(firstValue(f["Risk Score Total"]) || 0),
         entryCount: Number(firstValue(f["Entry Count"]) || 0),
         topRiskSignals: asArray(f["Top Risk Signals"]),
-        gridRegions:
-          asArray(f["Grid Regions (from Grid Regions)"]).length
-            ? asArray(f["Grid Regions (from Grid Regions)"])
-            : asArray(f["Grid Regions"]),
+        gridRegions: asArray(f["Grid Region Names"]), // <-- human-readable ISO names
         summary: firstValue(f.Summary),
         lastUpdated: firstValue(f["Last Updated"]),
       };
@@ -48,9 +40,6 @@ export default async function handler(req, res) {
     res.status(200).json({ states });
   } catch (err) {
     console.error("api/states error:", err);
-    res.status(500).json({
-      error: "States API failed",
-      detail: String(err?.message || err)
-    });
+    res.status(500).json({ error: "States API failed", detail: String(err?.message || err) });
   }
 }
