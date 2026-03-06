@@ -3,132 +3,120 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Arcus — Data Center Signals Map</title>
+  <title>Arcus Climate Map</title>
 
-  <!-- Mapbox GL -->
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 
   <link rel="stylesheet" href="./style.css" />
 </head>
-
 <body>
   <div class="topbar">
     <div class="brand">
-      <div class="brand__title">Arcus Map</div>
-      <div class="brand__subtitle">State risk + policy / grid / water / development signals</div>
+      <div class="brand__title">Arcus Climate</div>
+      <div class="brand__subtitle">Data center siting signals</div>
     </div>
 
-    <div class="controls">
-      <div class="control">
-        <label>View</label>
-        <div class="segmented">
-          <button id="btnViewState" class="segmented__btn segmented__btn--active">States</button>
-          <button id="btnViewIso" class="segmented__btn">ISO/RTO</button>
-        </div>
+    <div class="toolbar">
+      <div class="toggle">
+        <button id="viewStateBtn" class="toggle__btn toggle__btn--active">States</button>
+        <button id="viewIsoBtn" class="toggle__btn">ISO / RTO</button>
       </div>
 
-      <div class="control">
-        <label>State</label>
-        <input id="stateSearch" type="text" placeholder="Search (e.g., Virginia)" />
-      </div>
+      <input id="stateSearch" class="toolbar__input" type="text" placeholder="Search a state or ISO..." />
 
-      <div class="control">
-        <label>Category</label>
-        <select id="filterCategory"></select>
-      </div>
+      <select id="filterIso" class="toolbar__select">
+        <option value="">All ISO / RTO</option>
+      </select>
 
-      <div class="control">
-        <label>Impact</label>
-        <select id="filterImpact"></select>
-      </div>
+      <select id="filterCategory" class="toolbar__select">
+        <option value="">All Categories</option>
+      </select>
 
-      <div class="control">
-        <label>Signal Type</label>
-        <select id="filterType"></select>
-      </div>
+      <select id="filterImpact" class="toolbar__select">
+        <option value="">All Impact</option>
+      </select>
 
-      <div class="control">
-        <label>Direction</label>
-        <select id="filterDirection"></select>
-      </div>
+      <select id="filterType" class="toolbar__select">
+        <option value="">All Signal Types</option>
+      </select>
 
-      <div class="control">
-        <label>Signal Category</label>
-        <select id="filterSignalCategory"></select>
-      </div>
+      <select id="filterDirection" class="toolbar__select">
+        <option value="">All Directions</option>
+      </select>
 
-      <div class="control">
-        <button id="btnClear" class="btn">Clear filters</button>
-      </div>
+      <select id="filterSignalCategory" class="toolbar__select">
+        <option value="">All Signal Categories</option>
+      </select>
+
+      <button id="clearFiltersBtn" class="toolbar__btn">Clear</button>
     </div>
   </div>
 
   <div id="map"></div>
 
-<div id="legend" class="legend">
-  <div class="legend__title">Risk Score</div>
-
-  <div class="legend__row">
-    <span class="legend__swatch" style="background:#A8D5BA;"></span>
-    <div class="legend__text">
-      <div class="legend__label">Low Risk</div>
-      <div class="legend__range" id="legendLowRange">Score: —</div>
-    </div>
-  </div>
-
-  <div class="legend__row">
-    <span class="legend__swatch" style="background:#F3E6A3;"></span>
-    <div class="legend__text">
-      <div class="legend__label">Moderate Risk</div>
-      <div class="legend__range" id="legendMedRange">Score: —</div>
-    </div>
-  </div>
-
-  <div class="legend__row">
-    <span class="legend__swatch" style="background:#F7C6C7;"></span>
-    <div class="legend__text">
-      <div class="legend__label">Emerging Risk</div>
-      <div class="legend__range" id="legendEmergRange">Score: —</div>
-    </div>
-  </div>
-
-  <div class="legend__row">
-    <span class="legend__swatch" style="background:#E57373;"></span>
-    <div class="legend__text">
-      <div class="legend__label">High Risk</div>
-      <div class="legend__range" id="legendHighRange">Score: —</div>
-    </div>
-  </div>
-
-  <div class="legend__divider"></div>
-
-  <div class="legend__note">
-    Scores are a weighted sum of signals (policy/regulatory, grid capacity, water, and market activity).
-    We classify risk by score bands and update as new entries are added.
-  </div>
-</div>
-
   <aside id="panel" class="panel panel--hidden">
     <div class="panel__header">
       <div>
-        <div id="panelState" class="panel__title">State</div>
+        <div id="panelTitle" class="panel__title">Title</div>
         <div id="panelMeta" class="panel__meta"></div>
       </div>
-      <button id="panelClose" class="panel__close" aria-label="Close">✕</button>
+      <button id="panelClose" class="panel__close" aria-label="Close">×</button>
     </div>
 
     <div class="panel__section">
       <div class="panel__sectionTitle">Top Risk Signals</div>
-      <ul id="panelTopSignals" class="list"></ul>
+      <ul id="panelTopSignals" class="panel__list"></ul>
     </div>
 
     <div class="panel__section">
-      <div class="panel__sectionTitle">Matching Entries</div>
-      <div id="panelEntriesHint" class="hint"></div>
-      <ul id="panelEntries" class="list list--entries"></ul>
+      <div class="panel__sectionTitle">Resources</div>
+      <div id="panelEntriesHint" class="panel__hint"></div>
+      <ul id="panelEntries" class="panel__entries"></ul>
     </div>
   </aside>
+
+  <div id="legend" class="legend">
+    <div class="legend__title">Risk Score</div>
+
+    <div class="legend__row">
+      <span class="legend__swatch" style="background:#A8D5BA;"></span>
+      <div>
+        <div class="legend__label">Low Risk</div>
+        <div class="legend__range">Score: ≥ 6</div>
+      </div>
+    </div>
+
+    <div class="legend__row">
+      <span class="legend__swatch" style="background:#F3E6A3;"></span>
+      <div>
+        <div class="legend__label">Moderate Risk</div>
+        <div class="legend__range">Score: -17 to -6</div>
+      </div>
+    </div>
+
+    <div class="legend__row">
+      <span class="legend__swatch" style="background:#F7C6C7;"></span>
+      <div>
+        <div class="legend__label">Emerging Risk</div>
+        <div class="legend__range">Score: -5 to 5</div>
+      </div>
+    </div>
+
+    <div class="legend__row">
+      <span class="legend__swatch" style="background:#E57373;"></span>
+      <div>
+        <div class="legend__label">High Risk</div>
+        <div class="legend__range">Score: ≤ -18</div>
+      </div>
+    </div>
+
+    <div class="legend__divider"></div>
+
+    <div class="legend__note">
+      Scores reflect a weighted sum of signals related to grid capacity, policy and regulation, water constraints, and hyperscale development activity. States are classified into risk tiers based on their aggregate score.
+    </div>
+  </div>
 
   <script>
     window.MAPBOX_TOKEN = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg";
