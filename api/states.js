@@ -1,5 +1,16 @@
 import { airtableList, envOrThrow } from "./_airtable";
 
+function firstValue(v) {
+  if (Array.isArray(v)) return v[0] ?? "";
+  return v ?? "";
+}
+
+function asArray(v) {
+  if (Array.isArray(v)) return v.filter(Boolean);
+  if (!v) return [];
+  return [v];
+}
+
 export default async function handler(req, res) {
   try {
     const apiKey = envOrThrow("AIRTABLE_API_KEY");
@@ -14,24 +25,32 @@ export default async function handler(req, res) {
       apiKey
     });
 
-    const states = records.map(record => {
+    const states = records.map((record) => {
       const f = record.fields || {};
+
       return {
         id: record.id,
-        state: f.State || "",
-        calculatedRiskLevel: f["Calculated Risk Level"] || f["Risk Level"] || "No Data",
-        riskScoreTotal: f["Risk Score Total"] ?? 0,
-        entryCount: f["Entry Count"] ?? 0,
-        topRiskSignals: f["Top Risk Signals"] || [],
-        gridRegions: f["Grid Regions"] || [],
-        summary: f.Summary || "",
-        lastUpdated: f["Last Updated"] || ""
+        state: firstValue(f.State),
+        calculatedRiskLevel: firstValue(f["Calculated Risk Level"]) || firstValue(f["Risk Level"]) || "No Data",
+        riskScoreTotal: Number(firstValue(f["Risk Score Total"]) || 0),
+        entryCount: Number(firstValue(f["Entry Count"]) || 0),
+        topRiskSignals: asArray(f["Top Risk Signals"]),
+        gridRegions:
+          asArray(f["Grid Regions (from Grid Regions)"]).length
+            ? asArray(f["Grid Regions (from Grid Regions)"])
+            : asArray(f["Grid Regions"]),
+        summary: firstValue(f.Summary),
+        lastUpdated: firstValue(f["Last Updated"]),
       };
     });
 
     res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
     res.status(200).json({ states });
   } catch (err) {
-    res.status(500).json({ error: String(err.message || err) });
+    console.error("api/states error:", err);
+    res.status(500).json({
+      error: "States API failed",
+      detail: String(err?.message || err)
+    });
   }
 }
