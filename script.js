@@ -358,6 +358,8 @@ function renderIsoPanel(isoName) {
 }
 
 function refreshCurrentPanel() {
+  updateFilteredStateHighlight();
+  
   if (!currentContext) return;
   if (currentContext.type === "state") renderStatePanel(currentContext.value);
   if (currentContext.type === "iso") renderIsoPanel(currentContext.value);
@@ -577,6 +579,7 @@ function initMap() {
     });
 
     setLayerVisibility();
+    updateFilteredStateHighlight();
   });
 }
 
