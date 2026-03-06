@@ -313,6 +313,7 @@ html, body {
 .mini-panel__title {
   font-size: 13px;
   font-weight: 700;
+  margin-bottom: 8px;
 }
 
 .mini-panel__list {
@@ -322,6 +323,7 @@ html, body {
 
 .mini-panel__list li {
   font-size: 12px;
+  line-height: 1.45;
   margin-bottom: 4px;
   color: #111827;
 }
