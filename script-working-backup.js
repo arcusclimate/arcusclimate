@@ -14,6 +14,7 @@ const ui = {
   panelTopSignals: document.getElementById("panelTopSignals"),
   panelEntriesHint: document.getElementById("panelEntriesHint"),
   panelEntries: document.getElementById("panelEntries"),
+  hoverTooltip: document.getElementById("hoverTooltip"),
 
   stateSearch: document.getElementById("stateSearch"),
   filterIso: document.getElementById("filterIso"),
@@ -95,6 +96,21 @@ function fillSelect(el, values, placeholder) {
     opt.textContent = v;
     el.appendChild(opt);
   });
+}
+
+function showHoverTooltip(x, y, html) {
+  if (!ui.hoverTooltip) return;
+  ui.hoverTooltip.innerHTML = html;
+  ui.hoverTooltip.style.left = `${x + 16}px`;
+  ui.hoverTooltip.style.top = `${y + 88}px`;
+  ui.hoverTooltip.style.display = "block";
+  ui.hoverTooltip.classList.remove("hover-tooltip--hidden");
+}
+
+function hideHoverTooltip() {
+  if (!ui.hoverTooltip) return;
+  ui.hoverTooltip.style.display = "none";
+  ui.hoverTooltip.classList.add("hover-tooltip--hidden");
 }
 
 function buildIndexes() {
@@ -282,7 +298,7 @@ function renderStatePanel(stateName) {
     state.calculatedRiskLevel ? `Risk: ${state.calculatedRiskLevel}` : "",
     Number.isFinite(state.riskScoreTotal) ? `Score: ${state.riskScoreTotal}` : "",
     Number.isFinite(state.entryCount) ? `Entries: ${state.entryCount}` : "",
-   (state.gridRegions || []).length ? `ISO/RTO: ${state.gridRegions.join(", ")}` : ""
+    (state.gridRegions || []).length ? `ISO/RTO: ${state.gridRegions.join(", ")}` : ""
   ].filter(Boolean).join(" • ");
 
   renderTopSignals(state.topRiskSignals || []);
@@ -290,21 +306,6 @@ function renderStatePanel(stateName) {
   const filters = getFilters();
   const entries = (entriesByState.get(stateName) || []).filter(e => entryMatchesFilters(e, filters));
   renderEntries(entries);
-    if (!entries.length) {
-    const filters = getFilters();
-    const hasActiveFilters =
-      filters.search || filters.iso || filters.category || filters.impact ||
-      filters.type || filters.direction || filters.signalCategory;
-  
-    ui.panelEntriesHint.textContent = hasActiveFilters
-      ? "No resources match the current filters."
-      : "No resources available for this state.";
-  
-    ui.panelEntries.innerHTML = `<li>${hasActiveFilters
-      ? "Try clearing filters or choosing a different filter combination."
-      : "No linked resources were found for this state."}</li>`;
-    return;
-  }
 
   showPanel();
 }
@@ -319,15 +320,14 @@ function renderIsoPanel(isoName) {
     .flatMap(state => entriesByState.get(state) || [])
     .filter(e => entryMatchesFilters(e, filters));
 
+  const topSignals = stateNames
+    .flatMap(state => stateIndex.get(state)?.topRiskSignals || [])
+    .slice(0, 8);
+
   ui.panelTitle.textContent = isoName;
-  ui.panelMeta.textContent = `${stateNames.length} state${stateNames.length === 1 ? "" : "s"} • ${allEntries.length} matching resource${allEntries.length === 1 ? "" : "s"}`;
+  ui.panelMeta.textContent = `${stateNames.length} states • ${allEntries.length} resources`;
 
-  renderTopSignals(
-    stateNames
-      .flatMap(state => stateIndex.get(state)?.topRiskSignals || [])
-      .slice(0, 5)
-  );
-
+  renderTopSignals(topSignals);
   renderEntries(allEntries);
   showPanel();
 }
@@ -362,6 +362,7 @@ function bindUI() {
     ui.viewStateBtn.classList.add("toggle__btn--active");
     ui.viewIsoBtn.classList.remove("toggle__btn--active");
     setLayerVisibility();
+    hideHoverTooltip();
   });
 
   ui.viewIsoBtn.addEventListener("click", () => {
@@ -369,6 +370,7 @@ function bindUI() {
     ui.viewIsoBtn.classList.add("toggle__btn--active");
     ui.viewStateBtn.classList.remove("toggle__btn--active");
     setLayerVisibility();
+    hideHoverTooltip();
   });
 
   [
@@ -405,6 +407,7 @@ function bindUI() {
     ui.filterType.value = "";
     ui.filterDirection.value = "";
     ui.filterSignalCategory.value = "";
+    hideHoverTooltip();
     refreshCurrentPanel();
   });
 }
@@ -501,12 +504,28 @@ function initMap() {
 
       hoveredStateId = feature.id;
       safeSetFeatureState("states", hoveredStateId, { hover: true });
+
+      const stateName = normalizeStateName(feature.properties?.NAME || feature.properties?.name || "");
+      const state = stateIndex.get(stateName);
+
+      showHoverTooltip(
+        e.point.x,
+        e.point.y,
+        `
+          <strong>${stateName}</strong><br>
+          Risk: ${state?.calculatedRiskLevel || "No Data"}<br>
+          Score: ${state?.riskScoreTotal ?? 0}<br>
+          Entries: ${state?.entryCount ?? 0}<br>
+          ISO/RTO: ${(state?.gridRegions || []).join(", ") || "—"}
+        `
+      );
     });
 
     map.on("mouseleave", "states-fill", () => {
       map.getCanvas().style.cursor = "";
       if (hoveredStateId !== null) safeSetFeatureState("states", hoveredStateId, { hover: false });
       hoveredStateId = null;
+      hideHoverTooltip();
     });
 
     map.on("click", "states-fill", (e) => {
@@ -527,12 +546,32 @@ function initMap() {
 
       hoveredIsoId = feature.id;
       safeSetFeatureState("iso", hoveredIsoId, { hover: true });
+
+      const isoName = String(feature.properties?.iso || "").trim();
+      const stateNames = isoToStates.get(isoName) || [];
+      const filters = getFilters();
+
+      const entryCount = stateNames
+        .flatMap(state => entriesByState.get(state) || [])
+        .filter(entry => entryMatchesFilters(entry, filters))
+        .length;
+
+      showHoverTooltip(
+        e.point.x,
+        e.point.y,
+        `
+          <strong>${isoName}</strong><br>
+          States: ${stateNames.length}<br>
+          Resources: ${entryCount}
+        `
+      );
     });
 
     map.on("mouseleave", "iso-fill", () => {
       map.getCanvas().style.cursor = "";
       if (hoveredIsoId !== null) safeSetFeatureState("iso", hoveredIsoId, { hover: false });
       hoveredIsoId = null;
+      hideHoverTooltip();
     });
 
     map.on("click", "iso-fill", (e) => {
