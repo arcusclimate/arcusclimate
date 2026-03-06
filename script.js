@@ -523,12 +523,12 @@ function initMap() {
       paint: {
         "fill-color": [
         "match",
-          ["get", "Calculated Risk Level"],
-         "High Risk", "#E57373",
-         "Moderate Risk", "##F3E6A3",
-         "Emerging Risk", "#F7C6C7",
-        "Low Risk", "##A8D5BA",
-          /* default */ "#d1d5db"
+        ["coalesce", ["get", "Calculated Risk Level"], ["get", "calculatedRiskLevel"]],
+        "Low Risk", "#A8D5BA",
+        "Moderate Risk", "#F3E6A3",
+        "Emerging Risk", "#F7C6C7",
+        "High Risk", "#E57373",
+        "#E5E7EB"
       ],
         "fill-opacity": [
           "case",
