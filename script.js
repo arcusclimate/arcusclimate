@@ -524,10 +524,10 @@ function initMap() {
         "fill-color": [
         "match",
           ["get", "Calculated Risk Level"],
-         "High Risk", "#ef4444",
-         "Moderate Risk", "#f59e0b",
-         "Emerging Risk", "#fb7185",
-        "Low Risk", "#60a5fa",
+         "High Risk", "#E57373",
+         "Moderate Risk", "##F3E6A3",
+         "Emerging Risk", "#F7C6C7",
+        "Low Risk", "##A8D5BA",
           /* default */ "#d1d5db"
       ],
         "fill-opacity": [
