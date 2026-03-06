@@ -1,23 +1,4 @@
-/* =========================================================
-   Arcus Climate Map — script.js (drop-in replacement)
-   - Fixes: filters/search not doing anything (wires UI)
-   - Fixes: click state → persistent side panel with clickable links
-   - Adds: fast highlight of matching states via feature-state (scales)
-   - Works with your fetches:
-       /data/us-states.geojson
-       /data/iso-rto.geojson
-       /api/states
-       /api/entries
-       /api/options
-========================================================= */
-
-/* -------------------------
-   0) Token + hard fail early
--------------------------- */
-const MAPBOX_TOKEN =
-  typeof window !== "undefined" && typeof window.MAPBOX_TOKEN === "string"
-    ? window.MAPBOX_TOKEN.trim()
-    : "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg";
+const MAPBOX_TOKEN = typeof window !== "undefined" ? (window.MAPBOX_TOKEN || "").trim() : "";
 
 if (!MAPBOX_TOKEN) {
   console.error("Mapbox token missing. Set window.MAPBOX_TOKEN in index.html.");
@@ -25,523 +6,437 @@ if (!MAPBOX_TOKEN) {
   mapboxgl.accessToken = MAPBOX_TOKEN;
 }
 
-/* -------------------------
-   1) DOM helpers + UI refs
--------------------------- */
-const $ = (sel) => document.querySelector(sel);
-
 const ui = {
-  map: $("#map"),
+  panel: document.getElementById("panel"),
+  panelClose: document.getElementById("panelClose"),
+  panelTitle: document.getElementById("panelTitle"),
+  panelMeta: document.getElementById("panelMeta"),
+  panelTopSignals: document.getElementById("panelTopSignals"),
+  panelEntriesHint: document.getElementById("panelEntriesHint"),
+  panelEntries: document.getElementById("panelEntries"),
 
-  // panel
-  panel: $("#panel"),
-  panelClose: $("#panelClose"),
-  panelState: $("#panelState"),
-  panelMeta: $("#panelMeta"),
-  panelTopSignals: $("#panelTopSignals"),
-  panelEntriesHint: $("#panelEntriesHint"),
-  panelEntries: $("#panelEntries"),
+  stateSearch: document.getElementById("stateSearch"),
+  filterIso: document.getElementById("filterIso"),
+  filterCategory: document.getElementById("filterCategory"),
+  filterImpact: document.getElementById("filterImpact"),
+  filterType: document.getElementById("filterType"),
+  filterDirection: document.getElementById("filterDirection"),
+  filterSignalCategory: document.getElementById("filterSignalCategory"),
+  clearFiltersBtn: document.getElementById("clearFiltersBtn"),
 
-  // topbar + filters (best-effort: may not exist in your HTML)
-  // If your IDs differ, rename here ONLY.
-  stateSearch: $("#stateSearch") || $("#search") || $("#topSearch"),
-  filterCategory: $("#filterCategory"),
-  filterImpact: $("#filterImpact"),
-  filterType: $("#filterType"),
-  filterDirection: $("#filterDirection"),
-  filterSignalCategory: $("#filterSignalCategory"),
-  btnClear: $("#btnClear") || $("#clearFilters"),
-  btnModeState: $("#btnModeState") || $("#modeState"),
-  btnModeIso: $("#btnModeIso") || $("#modeIso"),
+  viewStateBtn: document.getElementById("viewStateBtn"),
+  viewIsoBtn: document.getElementById("viewIsoBtn"),
 };
 
-function safeText(el, text) {
-  if (!el) return;
-  el.textContent = text ?? "";
-}
+const RISK_COLORS = {
+  "Low Risk": "#A8D5BA",
+  "Moderate Risk": "#F3E6A3",
+  "Emerging Risk": "#F7C6C7",
+  "High Risk": "#E57373",
+  "No Data": "#E5E7EB",
+};
 
-function showPanel() {
-  if (!ui.panel) return;
-  ui.panel.classList.remove("panel--hidden");
-}
+let map;
+let statesGeo;
+let isoGeo;
 
-function hidePanel() {
-  if (!ui.panel) return;
-  ui.panel.classList.add("panel--hidden");
-}
+let statesData = [];
+let entriesData = [];
 
-/* -------------------------
-   2) Data holders
--------------------------- */
-let map = null;
-let statesGeo = null;
-let isoGeo = null;
+let stateIndex = new Map();
+let entriesByState = new Map();
+let isoToStates = new Map();
 
-let airtableStates = [];   // from /api/states
-let airtableEntries = [];  // from /api/entries
-let airtableOptions = [];  // from /api/options
-
-// Fast lookups
-let stateByName = new Map();          // "Virginia" -> stateObj
-let entriesByState = new Map();       // "Virginia" -> [entry,...]
-
-// Feature-state performance
+let currentViewMode = "state";
+let currentContext = null;
 let hoveredStateId = null;
 let hoveredIsoId = null;
-let matchingStates = new Set();
 
-/* -------------------------
-   3) Utilities
--------------------------- */
-function normalizeStateName(s) {
-  if (!s) return "";
-  return String(s).trim();
-}
-
-function toISODateYear(d) {
-  // expects something parseable; returns YYYY or empty
-  const dt = new Date(d);
-  if (Number.isNaN(dt.getTime())) return "";
-  return String(dt.getUTCFullYear());
-}
-
-function domainFromUrl(url) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return "";
-  }
-}
-
-function escapeHtml(str) {
-  return String(str ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function ensureFeatureIds(geo) {
-  // Feature-state requires feature ids. If none exist, assign stable-ish ids.
-  // Prefer existing id; otherwise use properties (NAME) or index.
-  geo.features.forEach((f, i) => {
-    if (f.id !== undefined && f.id !== null) return;
-    const name = f?.properties?.NAME || f?.properties?.name || f?.properties?.State || "";
-    f.id = name ? `${name}` : `${i}`;
-  });
-  return geo;
-}
-
-function setFeatureStateSafe(source, id, state) {
-  if (id === null || id === undefined) return;
-  if (!map.getSource(source)) return;
-  map.setFeatureState({ source, id }, state);
-}
-
-/* -------------------------
-   4) Fetch helpers
--------------------------- */
 async function fetchJson(url) {
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await fetch(url);
   const text = await res.text();
-
-  // If a 404 HTML page sneaks in, this gives a helpful error
   try {
     const json = JSON.parse(text);
-    if (!res.ok) {
-      throw new Error(json?.error || `Request failed: ${url} (${res.status})`);
-    }
+    if (!res.ok) throw new Error(json.error || `Request failed: ${url}`);
     return json;
-  } catch (e) {
-    const head = text.slice(0, 80).replace(/\s+/g, " ");
-    throw new Error(`Non-JSON response from ${url} (${res.status}). Body starts: ${head}`);
+  } catch {
+    throw new Error(`Non-JSON response from ${url}: ${text.slice(0, 120)}`);
   }
 }
 
-/* -------------------------
-   5) Filter wiring + logic
--------------------------- */
-function getCurrentFilters() {
-  const val = (el) => (el ? String(el.value || "").trim() : "");
-  const search = (ui.stateSearch ? String(ui.stateSearch.value || "").trim() : "");
-
-  return {
-    search,
-    category: val(ui.filterCategory),
-    impact: val(ui.filterImpact),
-    type: val(ui.filterType),
-    direction: val(ui.filterDirection),
-    signalCategory: val(ui.filterSignalCategory),
-  };
+function normalizeStateName(value) {
+  return String(value || "").trim();
 }
 
-function matchesSelect(filterValue, recordValue) {
-  if (!filterValue) return true;
-  if (!recordValue) return false;
-  return String(recordValue).trim() === String(filterValue).trim();
+function parseTopSignals(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter(Boolean);
+  return String(value)
+    .split(",")
+    .map(v => v.trim())
+    .filter(Boolean);
 }
 
-function entryMatchesFilters(entry, filters) {
-  // Search: if user types something, match against title + summary + state
-  if (filters.search) {
-    const q = filters.search.toLowerCase();
-    const blob = `${entry.title || ""} ${entry.summary || ""} ${entry.state || ""}`.toLowerCase();
-    if (!blob.includes(q)) return false;
-  }
-
-  if (!matchesSelect(filters.category, entry.category)) return false;
-  if (!matchesSelect(filters.impact, entry.impactLevel)) return false;
-  if (!matchesSelect(filters.type, entry.signalType)) return false;
-  if (!matchesSelect(filters.direction, entry.signalDirection)) return false;
-  if (!matchesSelect(filters.signalCategory, entry.signalCategory)) return false;
-
-  return true;
+function uniqueSorted(values) {
+  return [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
 }
 
-/* -------------------------
-   6) Populate filter dropdowns from /api/options
--------------------------- */
-function buildSelect(el, options, placeholder = "All") {
+function fillSelect(el, values, placeholder) {
   if (!el) return;
-
-  // preserve current selection if possible
-  const prev = String(el.value || "");
-
   el.innerHTML = "";
-  const opt0 = document.createElement("option");
-  opt0.value = "";
-  opt0.textContent = placeholder;
-  el.appendChild(opt0);
+  const base = document.createElement("option");
+  base.value = "";
+  base.textContent = placeholder;
+  el.appendChild(base);
 
-  for (const o of options) {
+  values.forEach(v => {
     const opt = document.createElement("option");
-    opt.value = o;
-    opt.textContent = o;
+    opt.value = v;
+    opt.textContent = v;
     el.appendChild(opt);
-  }
-
-  // restore selection if exists
-  if (prev && options.includes(prev)) el.value = prev;
+  });
 }
 
-function wireOptionsIntoUI() {
-  // /api/options should include groups like:
-  // { option, filterGroup } or { Option, Filter Group } etc.
-  const norm = airtableOptions.map((r) => ({
-    option: r.option ?? r.Option ?? r.name ?? r.Name ?? r.value ?? r.Value,
-    group: r.filterGroup ?? r.FilterGroup ?? r["Filter Group"] ?? r.group ?? r.Group,
-    active: r.active ?? r.Active ?? true,
-  }));
-
-  const byGroup = new Map();
-  for (const r of norm) {
-    if (!r.option || !r.group) continue;
-    if (r.active === false) continue;
-    if (!byGroup.has(r.group)) byGroup.set(r.group, new Set());
-    byGroup.get(r.group).add(String(r.option));
-  }
-
-  const list = (g) => Array.from(byGroup.get(g) || []).sort((a, b) => a.localeCompare(b));
-
-  // These group names must match what you use in Filter Options table
-  buildSelect(ui.filterCategory, list("Category"), "All Categories");
-  buildSelect(ui.filterImpact, list("Impact Level"), "All Impact Levels");
-  buildSelect(ui.filterType, list("Signal Type"), "All Signal Types");
-  buildSelect(ui.filterDirection, list("Signal Direction"), "All Directions");
-  buildSelect(ui.filterSignalCategory, list("Signal Category"), "All Signal Categories");
-}
-
-/* -------------------------
-   7) Build state + entry indexes
--------------------------- */
-function indexAirtableData() {
-  stateByName = new Map();
+function buildIndexes() {
+  stateIndex = new Map();
   entriesByState = new Map();
+  isoToStates = new Map();
 
-  // Normalize states
-  for (const s of airtableStates) {
-    const name = normalizeStateName(s.state ?? s.State ?? s.name ?? s.NAME);
+  for (const s of statesData) {
+    const name = normalizeStateName(s.state || s.State);
     if (!name) continue;
-    stateByName.set(name, {
+
+    const gridRegions = Array.isArray(s.gridRegions)
+      ? s.gridRegions
+      : (s.gridRegions ? [s.gridRegions] : []);
+
+    const rec = {
       state: name,
-      calculatedRiskLevel: s.calculatedRiskLevel ?? s["Calculated Risk Level"] ?? s.riskLevel ?? s["Risk Level"],
-      riskScoreTotal: s.riskScoreTotal ?? s["Risk Score Total"],
-      entryCount: s.entryCount ?? s["Entry Count"],
-      topRiskSignals: s.topRiskSignals ?? s["Top Risk Signals"] ?? [],
+      calculatedRiskLevel: s.calculatedRiskLevel || s["Calculated Risk Level"] || "",
+      riskScoreTotal: Number(s.riskScoreTotal ?? s["Risk Score Total"] ?? 0),
+      entryCount: Number(s.entryCount ?? s["Entry Count"] ?? 0),
+      topRiskSignals: parseTopSignals(s.topRiskSignals ?? s["Top Risk Signals"]),
+      gridRegions,
+      summary: s.summary || s.Summary || "",
+      lastUpdated: s.lastUpdated || s["Last Updated"] || "",
+    };
+
+    stateIndex.set(name, rec);
+
+    gridRegions.forEach(iso => {
+      if (!isoToStates.has(iso)) isoToStates.set(iso, []);
+      isoToStates.get(iso).push(name);
     });
   }
 
-  // Normalize entries
-  const normalizedEntries = [];
-  for (const e of airtableEntries) {
-    const state = normalizeStateName(e.state ?? e.State ?? e["State (from State)"] ?? e["State"]);
+  for (const e of entriesData) {
+    const state = normalizeStateName(e.state || e.State);
     if (!state) continue;
 
     const entry = {
-      title: e.title ?? e.Title ?? "",
-      summary: e.summary ?? e.Summary ?? "",
-      link: e.link ?? e.Link ?? "",
-      publishedDate: e.publishedDate ?? e["Published Date"] ?? e.date ?? e.Date ?? "",
+      title: e.title || e.Title || "",
+      summary: e.summary || e.Summary || "",
+      link: e.link || e.Link || "",
+      publishedDate: e.publishedDate || e["Published Date"] || "",
       state,
-      category: e.category ?? e["Category (linked)"] ?? e.Category ?? "",
-      impactLevel: e.impactLevel ?? e["Impact Level (linked)"] ?? e["Impact Level"] ?? "",
-      signalType: e.signalType ?? e["Signal Type (linked)"] ?? e["Signal Type"] ?? "",
-      signalDirection: e.signalDirection ?? e["Signal Direction (linked)"] ?? e["Signal Direction"] ?? "",
-      signalCategory: e.signalCategory ?? e["Signal Category"] ?? "",
-      impactRank: e.impactRank ?? e["Impact Rank"] ?? "",
-      sourceDomain: e.sourceDomain ?? e["Source Domain"] ?? domainFromUrl(e.link),
+      category: e.category || e["Category (linked)"] || e.Category || "",
+      impactLevel: e.impactLevel || e["Impact Level (linked)"] || e["Impact Level"] || "",
+      signalType: e.signalType || e["Signal Type (linked)"] || e["Signal Type"] || "",
+      signalDirection: e.signalDirection || e["Signal Direction (linked)"] || e["Signal Direction"] || "",
+      signalCategory: e.signalCategory || e["Signal Category"] || "",
+      impactRank: Number(e.impactRank ?? e["Impact Rank"] ?? 999),
+      sourceDomain: e.sourceDomain || e["Source Domain"] || "",
     };
 
-    normalizedEntries.push(entry);
     if (!entriesByState.has(state)) entriesByState.set(state, []);
     entriesByState.get(state).push(entry);
   }
 
-  // Sort entries within state for nicer panel (impactRank asc, then newest)
-  for (const [state, arr] of entriesByState.entries()) {
-    arr.sort((a, b) => {
-      const ar = Number(a.impactRank || 999);
-      const br = Number(b.impactRank || 999);
-      if (ar !== br) return ar - br;
-
-      const ad = new Date(a.publishedDate || 0).getTime() || 0;
-      const bd = new Date(b.publishedDate || 0).getTime() || 0;
-      return bd - ad;
+  for (const [state, list] of entriesByState.entries()) {
+    list.sort((a, b) => {
+      if (a.impactRank !== b.impactRank) return a.impactRank - b.impactRank;
+      return new Date(b.publishedDate || 0) - new Date(a.publishedDate || 0);
     });
   }
-
-  return normalizedEntries;
 }
 
-/* -------------------------
-   8) Panel rendering (clickable links)
--------------------------- */
-function renderTopSignalsList(stateName) {
-  if (!ui.panelTopSignals) return;
+function attachStateRiskToGeoJSON() {
+  statesGeo.features.forEach((feature) => {
+    const name = normalizeStateName(feature.properties?.NAME || feature.properties?.name || "");
+    const state = stateIndex.get(name);
+
+    feature.properties.calculatedRiskLevel = state?.calculatedRiskLevel || "No Data";
+    feature.properties.riskScoreTotal = state?.riskScoreTotal ?? 0;
+    feature.properties.entryCount = state?.entryCount ?? 0;
+  });
+}
+
+function fillFilters() {
+  const allEntries = [...entriesByState.values()].flat();
+
+  fillSelect(ui.filterIso, uniqueSorted([...isoToStates.keys()]), "All ISO / RTO");
+  fillSelect(ui.filterCategory, uniqueSorted(allEntries.map(e => e.category)), "All Categories");
+  fillSelect(ui.filterImpact, uniqueSorted(allEntries.map(e => e.impactLevel)), "All Impact");
+  fillSelect(ui.filterType, uniqueSorted(allEntries.map(e => e.signalType)), "All Signal Types");
+  fillSelect(ui.filterDirection, uniqueSorted(allEntries.map(e => e.signalDirection)), "All Directions");
+  fillSelect(ui.filterSignalCategory, uniqueSorted(allEntries.map(e => e.signalCategory)), "All Signal Categories");
+}
+
+function getFilters() {
+  return {
+    search: String(ui.stateSearch?.value || "").trim().toLowerCase(),
+    iso: String(ui.filterIso?.value || "").trim(),
+    category: String(ui.filterCategory?.value || "").trim(),
+    impact: String(ui.filterImpact?.value || "").trim(),
+    type: String(ui.filterType?.value || "").trim(),
+    direction: String(ui.filterDirection?.value || "").trim(),
+    signalCategory: String(ui.filterSignalCategory?.value || "").trim(),
+  };
+}
+
+function entryMatchesFilters(entry, filters) {
+  if (filters.search) {
+    const blob = `${entry.title} ${entry.summary} ${entry.state}`.toLowerCase();
+    if (!blob.includes(filters.search)) return false;
+  }
+
+  if (filters.iso) {
+    const state = stateIndex.get(entry.state);
+    const gridRegions = state?.gridRegions || [];
+    if (!gridRegions.includes(filters.iso)) return false;
+  }
+
+  if (filters.category && entry.category !== filters.category) return false;
+  if (filters.impact && entry.impactLevel !== filters.impact) return false;
+  if (filters.type && entry.signalType !== filters.type) return false;
+  if (filters.direction && entry.signalDirection !== filters.direction) return false;
+  if (filters.signalCategory && entry.signalCategory !== filters.signalCategory) return false;
+
+  return true;
+}
+
+function renderTopSignals(items) {
   ui.panelTopSignals.innerHTML = "";
-
-  const s = stateByName.get(stateName);
-  const top = Array.isArray(s?.topRiskSignals) ? s.topRiskSignals : [];
-
-  // If Airtable returns a single string with commas, handle it
-  const items = Array.isArray(top) ? top : String(top || "").split(",").map((x) => x.trim()).filter(Boolean);
-
   if (!items.length) {
-    const li = document.createElement("li");
-    li.className = "muted";
-    li.textContent = "No top signals yet.";
-    ui.panelTopSignals.appendChild(li);
+    ui.panelTopSignals.innerHTML = "<li>No top signals available.</li>";
     return;
   }
 
-  for (const t of items.slice(0, 5)) {
+  items.forEach(item => {
     const li = document.createElement("li");
-    li.textContent = t;
+    li.textContent = item;
     ui.panelTopSignals.appendChild(li);
-  }
+  });
 }
 
-function renderEntriesList(stateName) {
-  if (!ui.panelEntries) return;
+function renderEntries(entries) {
   ui.panelEntries.innerHTML = "";
 
-  const filters = getCurrentFilters();
-  const entries = (entriesByState.get(stateName) || []).filter((e) => entryMatchesFilters(e, filters));
-
-  safeText(ui.panelEntriesHint, entries.length ? `${entries.length} matching entries` : "No matching entries");
-
   if (!entries.length) {
-    const li = document.createElement("li");
-    li.className = "muted";
-    li.textContent = "Try clearing filters.";
-    ui.panelEntries.appendChild(li);
+    ui.panelEntriesHint.textContent = "No matching resources.";
+    ui.panelEntries.innerHTML = "<li>No matching entries for the current filters.</li>";
     return;
   }
 
-  for (const e of entries.slice(0, 30)) {
+  ui.panelEntriesHint.textContent = `${entries.length} matching resource${entries.length === 1 ? "" : "s"}`;
+
+  entries.forEach(entry => {
     const li = document.createElement("li");
-    li.className = "entry";
 
-    const year = toISODateYear(e.publishedDate);
-    const metaParts = [
-      e.category ? e.category : null,
-      e.impactLevel ? e.impactLevel : null,
-      year ? year : null,
-      e.sourceDomain ? e.sourceDomain : null,
-    ].filter(Boolean);
-
-    // Clickable title
-    const titleHtml = e.link
-      ? `<a href="${escapeHtml(e.link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.title || "Untitled")}</a>`
-      : `${escapeHtml(e.title || "Untitled")}`;
+    const year = entry.publishedDate ? new Date(entry.publishedDate).getFullYear() : "";
+    const meta = [
+      entry.category,
+      entry.impactLevel,
+      year || "",
+      entry.sourceDomain || ""
+    ].filter(Boolean).join(" • ");
 
     li.innerHTML = `
-      <div class="entry__title">${titleHtml}</div>
-      ${metaParts.length ? `<div class="entry__meta">${escapeHtml(metaParts.join(" • "))}</div>` : ""}
-      ${e.summary ? `<div class="entry__summary">${escapeHtml(e.summary)}</div>` : ""}
+      <div class="entry__title">
+        <a href="${entry.link}" target="_blank" rel="noopener noreferrer">${entry.title}</a>
+      </div>
+      <div class="entry__meta">${meta}</div>
+      <div class="entry__summary">${entry.summary || ""}</div>
     `;
 
     ui.panelEntries.appendChild(li);
-  }
+  });
 }
 
-function renderPanelForState(stateName) {
-  safeText(ui.panelState, stateName);
+function showPanel() {
+  ui.panel.classList.remove("panel--hidden");
+}
 
-  const s = stateByName.get(stateName);
-  const risk = s?.calculatedRiskLevel || s?.riskLevel || "";
-  const score = (s?.riskScoreTotal ?? "").toString();
-  const count = (s?.entryCount ?? "").toString();
+function hidePanel() {
+  ui.panel.classList.add("panel--hidden");
+}
 
-  const meta = [
-    risk ? `Risk: ${risk}` : null,
-    score ? `Score: ${score}` : null,
-    count ? `Entries: ${count}` : null,
+function renderStatePanel(stateName) {
+  const state = stateIndex.get(stateName);
+  if (!state) return;
+
+  currentContext = { type: "state", value: stateName };
+
+  ui.panelTitle.textContent = stateName;
+  ui.panelMeta.textContent = [
+    state.calculatedRiskLevel ? `Risk: ${state.calculatedRiskLevel}` : "",
+    Number.isFinite(state.riskScoreTotal) ? `Score: ${state.riskScoreTotal}` : "",
+    Number.isFinite(state.entryCount) ? `Entries: ${state.entryCount}` : "",
+    (state.gridRegions || []).length ? `ISO/RTO: ${state.gridRegions.join(", ")}` : ""
   ].filter(Boolean).join(" • ");
 
-  safeText(ui.panelMeta, meta);
+  renderTopSignals(state.topRiskSignals || []);
 
-  renderTopSignalsList(stateName);
-  renderEntriesList(stateName);
+  const filters = getFilters();
+  const entries = (entriesByState.get(stateName) || []).filter(e => entryMatchesFilters(e, filters));
+  renderEntries(entries);
+
   showPanel();
 }
 
-/* -------------------------
-   9) Match-highlighting (fast, scalable)
--------------------------- */
-function recomputeMatchesAndHighlight() {
-  if (!map || !statesGeo) return;
+function renderIsoPanel(isoName) {
+  currentContext = { type: "iso", value: isoName };
 
-  const filters = getCurrentFilters();
-  const next = new Set();
+  const stateNames = isoToStates.get(isoName) || [];
+  const filters = getFilters();
 
-  // Determine which states have any matching entries
-  for (const e of airtableEntries) {
-    const state = normalizeStateName(e.state ?? e.State ?? e["State (from State)"]);
-    if (!state) continue;
+  const allEntries = stateNames
+    .flatMap(state => entriesByState.get(state) || [])
+    .filter(e => entryMatchesFilters(e, filters));
 
-    // Use normalized “view” of entry for filter checks
-    const entry = {
-      title: e.title ?? e.Title ?? "",
-      summary: e.summary ?? e.Summary ?? "",
-      state,
-      category: e.category ?? e["Category (linked)"] ?? e.Category ?? "",
-      impactLevel: e.impactLevel ?? e["Impact Level (linked)"] ?? e["Impact Level"] ?? "",
-      signalType: e.signalType ?? e["Signal Type (linked)"] ?? e["Signal Type"] ?? "",
-      signalDirection: e.signalDirection ?? e["Signal Direction (linked)"] ?? e["Signal Direction"] ?? "",
-      signalCategory: e.signalCategory ?? e["Signal Category"] ?? "",
-    };
+  ui.panelTitle.textContent = isoName;
+  ui.panelMeta.textContent = `${stateNames.length} state${stateNames.length === 1 ? "" : "s"} • ${allEntries.length} matching resource${allEntries.length === 1 ? "" : "s"}`;
 
-    if (entryMatchesFilters(entry, filters)) next.add(state);
-  }
+  renderTopSignals(
+    stateNames
+      .flatMap(state => stateIndex.get(state)?.topRiskSignals || [])
+      .slice(0, 5)
+  );
 
-  matchingStates = next;
-
-  // Flip feature-state on state polygons (fast)
-  for (const f of statesGeo.features) {
-    const name = normalizeStateName(f?.properties?.NAME || f?.properties?.name || "");
-    const has = matchingStates.has(name);
-    setFeatureStateSafe("states", f.id, { hasMatch: has });
-  }
-
-  // If panel is open, rerender it so list reflects filters
-  if (ui.panel && !ui.panel.classList.contains("panel--hidden")) {
-    const current = (ui.panelState?.textContent || "").trim();
-    if (current) renderPanelForState(current);
-  }
+  renderEntries(allEntries);
+  showPanel();
 }
 
-/* -------------------------
-   10) Map init + layers
--------------------------- */
-function layerExists(id) {
-  return !!map.getLayer(id);
+function refreshCurrentPanel() {
+  if (!currentContext) return;
+  if (currentContext.type === "state") renderStatePanel(currentContext.value);
+  if (currentContext.type === "iso") renderIsoPanel(currentContext.value);
 }
 
-function safeSetVisibility(layerId, visible) {
-  if (!layerExists(layerId)) return;
-  map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
+function safeSetFeatureState(source, id, state) {
+  if (!map || id === undefined || id === null) return;
+  if (!map.getSource(source)) return;
+  map.setFeatureState({ source, id }, state);
 }
-
-let viewMode = "state"; // "state" or "iso"
 
 function setLayerVisibility() {
-  const showStates = viewMode === "state";
-  const showIso = viewMode === "iso";
+  const showStates = currentViewMode === "state";
+  const showIso = currentViewMode === "iso";
 
-  safeSetVisibility("states-fill", showStates);
-  safeSetVisibility("states-outline", showStates);
-
-  safeSetVisibility("iso-fill", showIso);
-  safeSetVisibility("iso-line", showIso);
-
-  map.getCanvas().style.cursor = "";
+  if (map.getLayer("states-fill")) map.setLayoutProperty("states-fill", "visibility", showStates ? "visible" : "none");
+  if (map.getLayer("states-outline")) map.setLayoutProperty("states-outline", "visibility", showStates ? "visible" : "none");
+  if (map.getLayer("iso-fill")) map.setLayoutProperty("iso-fill", "visibility", showIso ? "visible" : "none");
+  if (map.getLayer("iso-line")) map.setLayoutProperty("iso-line", "visibility", showIso ? "visible" : "none");
 }
 
-function clearFeatureStates() {
-  // clear hover on states
-  if (hoveredStateId !== null) {
-    setFeatureStateSafe("states", hoveredStateId, { hover: false });
-  }
-  hoveredStateId = null;
+function bindUI() {
+  ui.panelClose.addEventListener("click", hidePanel);
 
-  // clear hover on iso
-  if (hoveredIsoId !== null) {
-    setFeatureStateSafe("iso", hoveredIsoId, { hover: false });
-  }
-  hoveredIsoId = null;
+  ui.viewStateBtn.addEventListener("click", () => {
+    currentViewMode = "state";
+    ui.viewStateBtn.classList.add("toggle__btn--active");
+    ui.viewIsoBtn.classList.remove("toggle__btn--active");
+    setLayerVisibility();
+  });
+
+  ui.viewIsoBtn.addEventListener("click", () => {
+    currentViewMode = "iso";
+    ui.viewIsoBtn.classList.add("toggle__btn--active");
+    ui.viewStateBtn.classList.remove("toggle__btn--active");
+    setLayerVisibility();
+  });
+
+  [
+    ui.filterIso,
+    ui.filterCategory,
+    ui.filterImpact,
+    ui.filterType,
+    ui.filterDirection,
+    ui.filterSignalCategory
+  ].forEach(el => {
+    el?.addEventListener("change", refreshCurrentPanel);
+  });
+
+  ui.stateSearch?.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+
+    const query = ui.stateSearch.value.trim().toLowerCase();
+    if (!query) return;
+
+    if (currentViewMode === "state") {
+      const match = [...stateIndex.keys()].find(name => name.toLowerCase().includes(query));
+      if (match) renderStatePanel(match);
+    } else {
+      const match = [...isoToStates.keys()].find(name => name.toLowerCase().includes(query));
+      if (match) renderIsoPanel(match);
+    }
+  });
+
+  ui.clearFiltersBtn?.addEventListener("click", () => {
+    ui.stateSearch.value = "";
+    ui.filterIso.value = "";
+    ui.filterCategory.value = "";
+    ui.filterImpact.value = "";
+    ui.filterType.value = "";
+    ui.filterDirection.value = "";
+    ui.filterSignalCategory.value = "";
+    refreshCurrentPanel();
+  });
 }
 
 function initMap() {
-  if (!MAPBOX_TOKEN) return;
-
   map = new mapboxgl.Map({
     container: "map",
     style: "mapbox://styles/mapbox/light-v11",
-    center: [-98.5, 39.5],
-    zoom: 3.4,
+    center: [-97.5, 39.5],
+    zoom: 3.4
   });
 
   map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right");
 
   map.on("load", () => {
-    // Sources
-    statesGeo = ensureFeatureIds(statesGeo);
-    isoGeo = ensureFeatureIds(isoGeo);
+    map.addSource("states", {
+      type: "geojson",
+      data: statesGeo,
+      generateId: true
+    });
 
-map.addSource("states", {
-  type: "geojson",
-  data: "statesGeo",
-  generateId: true
-});
+    map.addSource("iso", {
+      type: "geojson",
+      data: isoGeo,
+      generateId: true
+    });
 
-map.addSource("iso", {
-  type: "geojson",
-  data: "./data/iso-rto.geojson",
-  generateId: true
-});
-
-    // STATES fill — uses existing properties if present; otherwise feature-state only
     map.addLayer({
       id: "states-fill",
       type: "fill",
       source: "states",
       paint: {
-         "fill-color": [
-           "match",
-           ["get", "calculatedRiskLevel"],
-           "Low Risk", "#A8D5BA",
-           "Moderate Risk", "#F3E6A3",
-           "Emerging Risk", "#F7C6C7",
-           "High Risk", "#E57373",
-           "#E5E7EB"
-         ],
-         "fill-opacity": [
-           "case",
-           ["boolean", ["feature-state", "hover"], false], 0.85,
-           0.72
-         ],
-      },
+        "fill-color": [
+          "match",
+          ["get", "calculatedRiskLevel"],
+          "Low Risk", "#A8D5BA",
+          "Moderate Risk", "#F3E6A3",
+          "Emerging Risk", "#F7C6C7",
+          "High Risk", "#E57373",
+          "#E5E7EB"
+        ],
+        "fill-opacity": [
+          "case",
+          ["boolean", ["feature-state", "hover"], false], 0.85,
+          0.72
+        ]
+      }
     });
 
     map.addLayer({
@@ -549,33 +444,24 @@ map.addSource("iso", {
       type: "line",
       source: "states",
       paint: {
-        "line-width": [
-          "case",
-          ["boolean", ["feature-state", "hasMatch"], false], 1.8,
-          1.0
-        ],
-        "line-color": [
-          "case",
-          ["boolean", ["feature-state", "hasMatch"], false], "#111827",
-          "#9ca3af"
-        ],
-      },
+        "line-color": "#6B7280",
+        "line-width": 1
+      }
     });
 
-    // ISO layers
     map.addLayer({
       id: "iso-fill",
       type: "fill",
       source: "iso",
       layout: { visibility: "none" },
       paint: {
-        "fill-color": "#3b82f6",
+        "fill-color": "#BFD7EA",
         "fill-opacity": [
           "case",
-          ["boolean", ["feature-state", "hover"], false], 0.18,
-          0.10
-        ],
-      },
+          ["boolean", ["feature-state", "hover"], false], 0.22,
+          0.12
+        ]
+      }
     });
 
     map.addLayer({
@@ -584,254 +470,90 @@ map.addSource("iso", {
       source: "iso",
       layout: { visibility: "none" },
       paint: {
-        "line-width": 2,
-        "line-color": "#1f2937",
-      },
+        "line-color": "#315B7C",
+        "line-width": 2
+      }
     });
 
-    // Hover/click interactions for STATES
     map.on("mousemove", "states-fill", (e) => {
+      const feature = e.features?.[0];
+      if (!feature) return;
       map.getCanvas().style.cursor = "pointer";
-      const f = e.features?.[0];
-      if (!f) return;
 
-      if (hoveredStateId !== null && hoveredStateId !== f.id) {
-        setFeatureStateSafe("states", hoveredStateId, { hover: false });
+      if (hoveredStateId !== null && hoveredStateId !== feature.id) {
+        safeSetFeatureState("states", hoveredStateId, { hover: false });
       }
-      hoveredStateId = f.id;
-      setFeatureStateSafe("states", hoveredStateId, { hover: true });
+
+      hoveredStateId = feature.id;
+      safeSetFeatureState("states", hoveredStateId, { hover: true });
     });
 
     map.on("mouseleave", "states-fill", () => {
       map.getCanvas().style.cursor = "";
-      if (hoveredStateId !== null) setFeatureStateSafe("states", hoveredStateId, { hover: false });
+      if (hoveredStateId !== null) safeSetFeatureState("states", hoveredStateId, { hover: false });
       hoveredStateId = null;
     });
 
     map.on("click", "states-fill", (e) => {
-      const f = e.features?.[0];
-      if (!f) return;
-      const stateName = normalizeStateName(f?.properties?.NAME || f?.properties?.name || "");
-      if (!stateName) return;
-      renderPanelForState(stateName);
+      const feature = e.features?.[0];
+      if (!feature) return;
+      const stateName = normalizeStateName(feature.properties?.NAME || feature.properties?.name || "");
+      renderStatePanel(stateName);
     });
 
-    // Hover/click for ISO
     map.on("mousemove", "iso-fill", (e) => {
+      const feature = e.features?.[0];
+      if (!feature) return;
       map.getCanvas().style.cursor = "pointer";
-      const f = e.features?.[0];
-      if (!f) return;
 
-      if (hoveredIsoId !== null && hoveredIsoId !== f.id) {
-        setFeatureStateSafe("iso", hoveredIsoId, { hover: false });
+      if (hoveredIsoId !== null && hoveredIsoId !== feature.id) {
+        safeSetFeatureState("iso", hoveredIsoId, { hover: false });
       }
-      hoveredIsoId = f.id;
-      setFeatureStateSafe("iso", hoveredIsoId, { hover: true });
+
+      hoveredIsoId = feature.id;
+      safeSetFeatureState("iso", hoveredIsoId, { hover: true });
     });
 
     map.on("mouseleave", "iso-fill", () => {
       map.getCanvas().style.cursor = "";
-      if (hoveredIsoId !== null) setFeatureStateSafe("iso", hoveredIsoId, { hover: false });
+      if (hoveredIsoId !== null) safeSetFeatureState("iso", hoveredIsoId, { hover: false });
       hoveredIsoId = null;
     });
 
     map.on("click", "iso-fill", (e) => {
-      const f = e.features?.[0];
-      if (!f) return;
-      // Simple: show name in panel title for now
-      const isoName = normalizeStateName(f?.properties?.iso || f?.properties?.NAME || "ISO / RTO");
-      safeText(ui.panelState, isoName);
-      safeText(ui.panelMeta, "ISO/RTO view (click a state for details)");
-      if (ui.panelTopSignals) ui.panelTopSignals.innerHTML = "";
-      if (ui.panelEntries) ui.panelEntries.innerHTML = "";
-      showPanel();
+      const feature = e.features?.[0];
+      if (!feature) return;
+      const isoName = String(feature.properties?.iso || "").trim();
+      if (!isoName) return;
+      renderIsoPanel(isoName);
     });
 
-    // Close panel
-    if (ui.panelClose) ui.panelClose.addEventListener("click", hidePanel);
-
-    // Mode buttons
-    if (ui.btnModeState) {
-      ui.btnModeState.addEventListener("click", () => {
-        viewMode = "state";
-        clearFeatureStates();
-        setLayerVisibility();
-      });
-    }
-    if (ui.btnModeIso) {
-      ui.btnModeIso.addEventListener("click", () => {
-        viewMode = "iso";
-        clearFeatureStates();
-        setLayerVisibility();
-      });
-    }
-
-    // Wire UI listeners (search/filters)
-    wireUI();
-
-    // Initial compute
-    recomputeMatchesAndHighlight();
+    setLayerVisibility();
   });
 }
 
-/* -------------------------
-   11) UI wiring (this fixes “filters do nothing”)
--------------------------- */
-function wireUI() {
-  const onChange = () => recomputeMatchesAndHighlight();
-
-  if (ui.stateSearch) ui.stateSearch.addEventListener("input", onChange);
-  if (ui.filterCategory) ui.filterCategory.addEventListener("change", onChange);
-  if (ui.filterImpact) ui.filterImpact.addEventListener("change", onChange);
-  if (ui.filterType) ui.filterType.addEventListener("change", onChange);
-  if (ui.filterDirection) ui.filterDirection.addEventListener("change", onChange);
-  if (ui.filterSignalCategory) ui.filterSignalCategory.addEventListener("change", onChange);
-
-  if (ui.btnClear) {
-    ui.btnClear.addEventListener("click", () => {
-      if (ui.stateSearch) ui.stateSearch.value = "";
-      if (ui.filterCategory) ui.filterCategory.value = "";
-      if (ui.filterImpact) ui.filterImpact.value = "";
-      if (ui.filterType) ui.filterType.value = "";
-      if (ui.filterDirection) ui.filterDirection.value = "";
-      if (ui.filterSignalCategory) ui.filterSignalCategory.value = "";
-      recomputeMatchesAndHighlight();
-    });
-  }
-}
-
-function computeLegendRangesFromData() {
-  const scores = airtableStates
-    .map(s => Number(s.riskScoreTotal ?? s["Risk Score Total"]))
-    .filter(n => Number.isFinite(n));
-
-  if (!scores.length) {
-    setLegendRanges({
-      low: "≤ -10",
-      moderate: "-9 to 0",
-      emerging: "1 to 9",
-      high: "≥ 10",
-    });
-    return;
-  }
-
-  scores.sort((a, b) => a - b);
-
-  const q1 = scores[Math.floor(scores.length * 0.25)];
-  const q2 = scores[Math.floor(scores.length * 0.50)];
-  const q3 = scores[Math.floor(scores.length * 0.75)];
-
-  setLegendRanges({
-    low: `≤ ${q1}`,
-    moderate: `${q1 + 1} to ${q2}`,
-    emerging: `${q2 + 1} to ${q3}`,
-    high: `≥ ${q3 + 1}`,
-  });
-}
-
-function setLegendRanges({ low, moderate, emerging, high }) {
-  const lowEl = document.getElementById("legendLowRange");
-  const medEl = document.getElementById("legendMedRange");
-  const emEl = document.getElementById("legendEmergRange");
-  const hiEl = document.getElementById("legendHighRange");
-
-  if (lowEl) lowEl.textContent = `Score: ${low}`;
-  if (medEl) medEl.textContent = `Score: ${moderate}`;
-  if (emEl) emEl.textContent = `Score: ${emerging}`;
-  if (hiEl) hiEl.textContent = `Score: ${high}`;
-}
-
-function attachStateRiskToGeoJSON() {
-  if (!statesGeo || !statesGeo.features || !airtableStates || !airtableStates.length) return;
-
-  // Build quick lookup from Airtable states by state name
-  const riskByState = new Map();
-
-  for (const s of airtableStates) {
-    const stateName = (s.state || s.State || "").trim();
-    if (!stateName) continue;
-
-    riskByState.set(stateName, {
-      calculatedRiskLevel:
-        s.calculatedRiskLevel ||
-        s["Calculated Risk Level"] ||
-        s.riskLevel ||
-        s["Risk Level"] ||
-        "",
-      riskScoreTotal:
-        s.riskScoreTotal ??
-        s["Risk Score Total"] ??
-        0,
-      entryCount:
-        s.entryCount ??
-        s["Entry Count"] ??
-        0
-    });
-  }
-
-  // Write those values directly onto each GeoJSON feature
-  statesGeo.features.forEach((feature) => {
-    const featureStateName =
-      (feature.properties?.NAME ||
-       feature.properties?.name ||
-       "").trim();
-
-    const match = riskByState.get(featureStateName);
-
-    feature.properties.calculatedRiskLevel = match?.calculatedRiskLevel || "";
-    feature.properties.riskScoreTotal = match?.riskScoreTotal || 0;
-    feature.properties.entryCount = match?.entryCount || 0;
-  });
-}
-
-/* -------------------------
-   12) Bootstrap: load everything then init
--------------------------- */
 async function main() {
   try {
-    const [
-      statesG,
-      isoG,
-      statesApi,
-      entriesApi,
-      optionsApi
-    ] = await Promise.all([
+    const [rawStatesGeo, rawIsoGeo, rawStatesApi, rawEntriesApi] = await Promise.all([
       fetchJson("/data/us-states.geojson"),
       fetchJson("/data/iso-rto.geojson"),
       fetchJson("/api/states"),
-      fetchJson("/api/entries"),
-      fetchJson("/api/options"),
+      fetchJson("/api/entries")
     ]);
 
-    statesGeo = statesG;
-    isoGeo = isoG;
-    airtableStates = Array.isArray(statesApi) ? statesApi : (statesApi?.states || statesApi?.data || []);
-    airtableEntries = Array.isArray(entriesApi) ? entriesApi : (entriesApi?.entries || entriesApi?.data || []);
-    airtableOptions = Array.isArray(optionsApi) ? optionsApi : (optionsApi?.options || optionsApi?.data || []);
+    statesGeo = rawStatesGeo;
+    isoGeo = rawIsoGeo;
+    statesData = rawStatesApi.states || rawStatesApi;
+    entriesData = rawEntriesApi.entries || rawEntriesApi;
 
-    // Build indexes + filters
-      indexAirtableData();
-      wireOptionsIntoUI();
-      computeLegendRangesFromData();
-      attachStateRiskToGeoJSON();
-      initMap();
-
-    // Optional: also bake calculated risk into state geojson properties if not present
-    // so the fill-color match works
-    const by = stateByName;
-    statesGeo.features.forEach((f) => {
-      const name = normalizeStateName(f?.properties?.NAME || f?.properties?.name || "");
-      const s = by.get(name);
-      if (s && (!f.properties["Calculated Risk Level"] || f.properties["Calculated Risk Level"] === "")) {
-        f.properties["Calculated Risk Level"] = s.calculatedRiskLevel || "";
-      }
-    });
-
-    // Start map
+    buildIndexes();
+    attachStateRiskToGeoJSON();
+    fillFilters();
+    bindUI();
     initMap();
   } catch (err) {
     console.error(err);
-    alert(String(err.message || err));
+    alert(`Map failed to load: ${err.message}`);
   }
 }
 
