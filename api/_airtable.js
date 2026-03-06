@@ -1,16 +1,17 @@
 export async function airtableList({ baseId, tableName, viewName, apiKey }) {
-  const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`);
-  if (viewName) url.searchParams.set("view", viewName);
-  url.searchParams.set("pageSize", "100");
-
-  const records = [];
+  const all = [];
   let offset = null;
 
-  while (true) {
+  do {
+    const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`);
+    url.searchParams.set("pageSize", "100");
+    if (viewName) url.searchParams.set("view", viewName);
     if (offset) url.searchParams.set("offset", offset);
 
     const res = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers: {
+        Authorization: `Bearer ${apiKey}`
+      }
     });
 
     if (!res.ok) {
@@ -19,17 +20,15 @@ export async function airtableList({ baseId, tableName, viewName, apiKey }) {
     }
 
     const json = await res.json();
-    records.push(...(json.records || []));
-
+    all.push(...(json.records || []));
     offset = json.offset;
-    if (!offset) break;
-  }
+  } while (offset);
 
-  return records;
+  return all;
 }
 
 export function envOrThrow(name) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing env var: ${name}`);
+  return value;
 }
