@@ -21,6 +21,7 @@ const ui = {
   panelEntriesHint: document.getElementById("panelEntriesHint"),
   panelEntries: document.getElementById("panelEntries"),
   hoverTooltip: document.getElementById("hoverTooltip"),
+   topRiskList: document.getElementById("topRiskList"),
 
   stateSearch: document.getElementById("stateSearch"),
   filterIso: document.getElementById("filterIso"),
@@ -615,6 +616,7 @@ function initMap() {
   });
 }
 
+
 async function main() {
   try {
     const [rawStatesGeo, rawIsoGeo, rawStatesApi, rawEntriesApi] = await Promise.all([
@@ -633,7 +635,9 @@ async function main() {
     attachStateRiskToGeoJSON();
     fillFilters();
     bindUI();
+    renderTopRiskStates();
     initMap();
+     
   } catch (err) {
     console.error(err);
     alert(`Map failed to load: ${err.message}`);
