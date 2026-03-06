@@ -522,18 +522,14 @@ function initMap() {
       source: "states",
       paint: {
         "fill-color": [
-          "case",
-          // If you have a risk level property on the geojson already, prefer it
-          ["match", ["get", "Calculated Risk Level"],
-            "High Risk", "#ef4444",
-            "Moderate Risk", "#f59e0b",
-            "Emerging Risk", "#fb7185",
-            "Low Risk", "#60a5fa",
-            /* default */ "#d1d5db"
-          ],
-          // fallback if not present
-          "#d1d5db"
-        ],
+        "match",
+          ["get", "Calculated Risk Level"],
+         "High Risk", "#ef4444",
+         "Moderate Risk", "#f59e0b",
+         "Emerging Risk", "#fb7185",
+        "Low Risk", "#60a5fa",
+          /* default */ "#d1d5db"
+      ],
         "fill-opacity": [
           "case",
           ["boolean", ["feature-state", "hover"], false], 0.85,
