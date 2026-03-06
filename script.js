@@ -132,13 +132,11 @@ function ensureFeatureIds(geo) {
   return geo;
 }
 
-function setFeatureStateSafe(sourceId, featureId, stateObj) {
-  if (!map) return;
-  try {
-    map.setFeatureState({ source: sourceId, id: featureId }, stateObj);
-  } catch (_) {
-    // ignore
-  }
+function setFeatureStateSafe(source, id, state) {
+  if (id === null || id === undefined) return;
+  if (!map.getSource(source)) return;
+  map.setFeatureState({ source, id }, state);
+}
 }
 
 /* -------------------------
