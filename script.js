@@ -342,18 +342,18 @@ function renderIsoPanel(isoName) {
 
   const allEntries = stateNames
     .flatMap(state => entriesByState.get(state) || [])
-    .filter(e => entryMatchesFilters(e, filters));
+    .filter(entry => entryMatchesFilters(entry, filters));
+
+  const topSignals = stateNames
+    .flatMap(state => stateIndex.get(state)?.topRiskSignals || [])
+    .slice(0, 8);
 
   ui.panelTitle.textContent = isoName;
-  ui.panelMeta.textContent = `${stateNames.length} state${stateNames.length === 1 ? "" : "s"} • ${allEntries.length} matching resource${allEntries.length === 1 ? "" : "s"}`;
+  ui.panelMeta.textContent = `${stateNames.length} states • ${allEntries.length} resources`;
 
-  renderTopSignals(
-    stateNames
-      .flatMap(state => stateIndex.get(state)?.topRiskSignals || [])
-      .slice(0, 5)
-  );
-
+  renderTopSignals(topSignals);
   renderEntries(allEntries);
+
   showPanel();
 }
 
