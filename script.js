@@ -449,6 +449,27 @@ function ensureStateFeatureIds() {
   });
 }
 
+function refreshCurrentPanel() {
+  ...
+}
+
+function showHoverTooltip(x, y, html) {
+  if (!ui.hoverTooltip) return;
+
+  ui.hoverTooltip.innerHTML = html;
+  ui.hoverTooltip.style.left = `${x + 16}px`;
+  ui.hoverTooltip.style.top = `${y + 88}px`;
+  ui.hoverTooltip.style.display = "block";
+  ui.hoverTooltip.classList.remove("hover-tooltip--hidden");
+}
+
+function hideHoverTooltip() {
+  if (!ui.hoverTooltip) return;
+
+  ui.hoverTooltip.style.display = "none";
+  ui.hoverTooltip.classList.add("hover-tooltip--hidden");
+}
+
 function initMap() {
   map = new mapboxgl.Map({
     container: "map",
