@@ -484,8 +484,16 @@ function initMap() {
       type: "line",
       source: "states",
       paint: {
-        "line-color": "#6B7280",
-        "line-width": 1
+        "line-color": [
+          "case",
+          ["boolean", ["feature-state", "filteredMatch"], false], "#1F2937",
+          "#6B7280"
+        ],
+        "line-width": [
+          "case",
+          ["boolean", ["feature-state", "filteredMatch"], false], 2.2,
+          1
+        ]
       }
     });
 
