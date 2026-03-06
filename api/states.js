@@ -7,24 +7,31 @@ export default async function handler(req, res) {
     const tableName = process.env.AIRTABLE_STATES_TABLE || "States";
     const viewName = process.env.AIRTABLE_STATES_VIEW || "Map API";
 
-    const records = await airtableList({ baseId, tableName, viewName, apiKey });
+    const records = await airtableList({
+      baseId,
+      tableName,
+      viewName,
+      apiKey
+    });
 
-    const states = records.map((r) => {
-      const f = r.fields || {};
+    const states = records.map(record => {
+      const f = record.fields || {};
       return {
-        id: r.id,
-        state: f.State || f.state || "",
-        calculatedRiskLevel: f["Calculated Risk Level"] || "",
+        id: record.id,
+        state: f.State || "",
+        calculatedRiskLevel: f["Calculated Risk Level"] || f["Risk Level"] || "No Data",
         riskScoreTotal: f["Risk Score Total"] ?? 0,
         entryCount: f["Entry Count"] ?? 0,
         topRiskSignals: f["Top Risk Signals"] || [],
-        lastUpdated: f["Last Updated"] || null,
+        gridRegions: f["Grid Regions"] || [],
+        summary: f.Summary || "",
+        lastUpdated: f["Last Updated"] || ""
       };
     });
 
     res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
-    return res.status(200).json({ states });
+    res.status(200).json({ states });
   } catch (err) {
-    return res.status(500).json({ error: String(err?.message || err) });
+    res.status(500).json({ error: String(err.message || err) });
   }
 }
