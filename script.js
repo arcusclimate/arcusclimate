@@ -696,6 +696,47 @@ function wireUI() {
   }
 }
 
+function computeLegendRangesFromData() {
+  const scores = airtableStates
+    .map(s => Number(s.riskScoreTotal ?? s["Risk Score Total"]))
+    .filter(n => Number.isFinite(n));
+
+  if (!scores.length) {
+    setLegendRanges({
+      low: "≤ -10",
+      moderate: "-9 to 0",
+      emerging: "1 to 9",
+      high: "≥ 10",
+    });
+    return;
+  }
+
+  scores.sort((a, b) => a - b);
+
+  const q1 = scores[Math.floor(scores.length * 0.25)];
+  const q2 = scores[Math.floor(scores.length * 0.50)];
+  const q3 = scores[Math.floor(scores.length * 0.75)];
+
+  setLegendRanges({
+    low: `≤ ${q1}`,
+    moderate: `${q1 + 1} to ${q2}`,
+    emerging: `${q2 + 1} to ${q3}`,
+    high: `≥ ${q3 + 1}`,
+  });
+}
+
+function setLegendRanges({ low, moderate, emerging, high }) {
+  const lowEl = document.getElementById("legendLowRange");
+  const medEl = document.getElementById("legendMedRange");
+  const emEl = document.getElementById("legendEmergRange");
+  const hiEl = document.getElementById("legendHighRange");
+
+  if (lowEl) lowEl.textContent = `Score: ${low}`;
+  if (medEl) medEl.textContent = `Score: ${moderate}`;
+  if (emEl) emEl.textContent = `Score: ${emerging}`;
+  if (hiEl) hiEl.textContent = `Score: ${high}`;
+}
+
 /* -------------------------
    12) Bootstrap: load everything then init
 -------------------------- */
@@ -724,6 +765,7 @@ async function main() {
     // Build indexes + filters
     indexAirtableData();
     wireOptionsIntoUI();
+     computeLegendRangesFromData();
 
     // Optional: also bake calculated risk into state geojson properties if not present
     // so the fill-color match works
