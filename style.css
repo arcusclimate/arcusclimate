@@ -278,18 +278,19 @@ html, body {
 
 .hover-tooltip {
   position: absolute;
-  z-index: 30;
+  z-index: 9999;
   pointer-events: none;
-  background: rgba(255,255,255,.96);
-  border: 1px solid rgba(17,24,39,.10);
+  background: rgba(255,255,255,.98);
+  border: 1px solid rgba(17,24,39,.12);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(17,24,39,.12);
+  box-shadow: 0 8px 24px rgba(17,24,39,.14);
   padding: 8px 10px;
   font-size: 12px;
   line-height: 1.35;
   color: #111827;
   max-width: 220px;
   white-space: normal;
+  display: none;
 }
 
 .hover-tooltip--hidden {
