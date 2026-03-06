@@ -490,13 +490,25 @@ function initMap() {
       source: "iso",
       layout: { visibility: "none" },
       paint: {
-        "fill-color": "#BFD7EA",
+        "fill-color": [
+          "match",
+          ["get", "iso"],
+          "PJM", "#7FB3D5",
+          "MISO", "#A3BE8C",
+          "SPP", "#EBCB8B",
+          "ERCOT", "#D08770",
+          "CAISO", "#88C0D0",
+          "NYISO", "#B48EAD",
+          "ISO-NE", "#81A1C1",
+          "WECC", "#D8DEE9",
+          "#D1D5DB"
+        ],
         "fill-opacity": [
           "case",
-          ["boolean", ["feature-state", "hover"], false], 0.22,
-          0.12
-        ]
-      }
+          ["boolean", ["feature-state", "hover"], false], 0.26,
+          0.16
+  ]
+}
     });
 
     map.addLayer({
@@ -505,8 +517,8 @@ function initMap() {
       source: "iso",
       layout: { visibility: "none" },
       paint: {
-        "line-color": "#315B7C",
-        "line-width": 2
+        "line-color": "#475569",
+        "line-width": 1.8
       }
     });
 
