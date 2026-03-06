@@ -17,7 +17,7 @@
 const MAPBOX_TOKEN =
   typeof window !== "undefined" && typeof window.MAPBOX_TOKEN === "string"
     ? window.MAPBOX_TOKEN.trim()
-    : "";
+    : "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg";
 
 if (!MAPBOX_TOKEN) {
   console.error("Mapbox token missing. Set window.MAPBOX_TOKEN in index.html.");
