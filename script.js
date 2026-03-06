@@ -26,6 +26,8 @@ const ui = {
 
   viewStateBtn: document.getElementById("viewStateBtn"),
   viewIsoBtn: document.getElementById("viewIsoBtn"),
+
+  hoverTooltip: document.getElementById("hoverTooltip"),
 };
 
 const RISK_COLORS = {
