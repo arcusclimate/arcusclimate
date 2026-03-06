@@ -575,7 +575,6 @@ map.on("mouseleave", "states-fill", () => {
   map.getCanvas().style.cursor = "";
   if (hoveredStateId !== null) safeSetFeatureState("states", hoveredStateId, { hover: false });
   hoveredStateId = null;
-  hideHoverTooltip();
 });
 
 map.on("click", "states-fill", (e) => {
@@ -596,32 +595,12 @@ map.on("mousemove", "iso-fill", (e) => {
 
   hoveredIsoId = feature.id;
   safeSetFeatureState("iso", hoveredIsoId, { hover: true });
-
-  const isoName = String(feature.properties?.iso || "").trim();
-  const stateNames = isoToStates.get(isoName) || [];
-  const filters = getFilters();
-
-  const entryCount = stateNames
-    .flatMap(state => entriesByState.get(state) || [])
-    .filter(entry => entryMatchesFilters(entry, filters))
-    .length;
-
-  showHoverTooltip(
-    e.point.x,
-    e.point.y,
-    `
-      <strong>${isoName}</strong><br>
-      States: ${stateNames.length}<br>
-      Resources: ${entryCount}
-    `
-  );
 });
 
 map.on("mouseleave", "iso-fill", () => {
   map.getCanvas().style.cursor = "";
   if (hoveredIsoId !== null) safeSetFeatureState("iso", hoveredIsoId, { hover: false });
   hoveredIsoId = null;
-  hideHoverTooltip();
 });
 
 map.on("click", "iso-fill", (e) => {
