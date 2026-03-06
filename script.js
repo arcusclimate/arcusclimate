@@ -529,7 +529,6 @@ function initMap() {
         "Emerging Risk", "#F7C6C7",
         "High Risk", "#E57373",
         "#E5E7EB"
-           "fill-opacity": 0.72
       ],
         "fill-opacity": [
           "case",
