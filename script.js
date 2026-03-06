@@ -512,8 +512,17 @@ function initMap() {
     statesGeo = ensureFeatureIds(statesGeo);
     isoGeo = ensureFeatureIds(isoGeo);
 
-    map.addSource("states", { type: "geojson", data: statesGeo });
-    map.addSource("iso", { type: "geojson", data: isoGeo });
+map.addSource("states", {
+  type: "geojson",
+  data: "./data/us-states.geojson",
+  generateId: true
+});
+
+map.addSource("iso", {
+  type: "geojson",
+  data: "./data/iso-rto.geojson",
+  generateId: true
+});
 
     // STATES fill — uses existing properties if present; otherwise feature-state only
     map.addLayer({
