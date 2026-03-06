@@ -1,5 +1,10 @@
 import { airtableList, envOrThrow } from "./_airtable";
 
+function firstValue(v) {
+  if (Array.isArray(v)) return v[0] ?? "";
+  return v ?? "";
+}
+
 export default async function handler(req, res) {
   try {
     const apiKey = envOrThrow("AIRTABLE_API_KEY");
@@ -14,56 +19,33 @@ export default async function handler(req, res) {
       apiKey
     });
 
-    const entries = records.map(record => {
+    const entries = records.map((record) => {
       const f = record.fields || {};
+
       return {
         id: record.id,
-        title: f.Title || "",
-        summary: f.Summary || "",
-        link: f.Link || "",
-        publishedDate: f["Published Date"] || "",
-        state:
-          f["State (from State)"] ||
-          (Array.isArray(f.State) ? f.State[0] : f.State) ||
-          "",
-        category:
-          f["Category (linked)"] ||
-          f.Category ||
-          "",
-        impactLevel:
-          f["Impact Level (linked)"] ||
-          f["Impact Level"] ||
-          "",
-        signalType:
-          f["Signal Type (linked)"] ||
-          f["Signal Type"] ||
-          "",
-        signalDirection:
-          f["Signal Direction (linked)"] ||
-          f["Signal Direction"] ||
-          "",
-        signalCategory:
-          f["Signal Category"] ||
-          "",
-        impactRank:
-          f["Impact Rank"] ?? 999,
-        sourceDomain:
-          f["Source Domain"] ||
-          ""
+        title: firstValue(f.Title),
+        summary: firstValue(f.Summary),
+        link: firstValue(f.Link),
+        publishedDate: firstValue(f["Published Date"]),
+        state: firstValue(f["State (from State)"]) || firstValue(f.State),
+        category: firstValue(f["Category (linked)"]) || firstValue(f.Category),
+        impactLevel: firstValue(f["Impact Level (linked)"]) || firstValue(f["Impact Level"]),
+        signalType: firstValue(f["Signal Type (linked)"]) || firstValue(f["Signal Type"]),
+        signalDirection: firstValue(f["Signal Direction (linked)"]) || firstValue(f["Signal Direction"]),
+        signalCategory: firstValue(f["Signal Category"]),
+        impactRank: Number(firstValue(f["Impact Rank"]) || 999),
+        sourceDomain: firstValue(f["Source Domain"]),
       };
     });
 
     res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
     res.status(200).json({ entries });
   } catch (err) {
-    res.status(500).json({ error: String(err.message || err) });
-  }
-}
+    console.error("api/entries error:", err);
+    res.status(500).json({
+      error: "Entries API failed",
+      detail: String(err?.message || err)
     });
-
-    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
-    return res.status(200).json({ entries });
-  } catch (err) {
-    return res.status(500).json({ error: String(err?.message || err) });
   }
 }
