@@ -28,7 +28,11 @@ export default async function handler(req, res) {
         summary: firstValue(f.Summary),
         link: firstValue(f.Link),
         publishedDate: firstValue(f["Published Date"]),
-        state: firstValue(f["State (from State)"]) || firstValue(f.State),
+        state:
+          firstValue(f["State (from State)"]) ||
+          firstValue(f["State Name"]) ||
+          firstValue(f.State),
+
         category: firstValue(f["Category (linked)"]) || firstValue(f.Category),
         impactLevel: firstValue(f["Impact Level (linked)"]) || firstValue(f["Impact Level"]),
         signalType: firstValue(f["Signal Type (linked)"]) || firstValue(f["Signal Type"]),
