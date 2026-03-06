@@ -645,19 +645,20 @@ async function main() {
 }
 
 function renderTopRiskStates() {
-  if (!ui.topRiskList) return;
-
-  ui.topRiskList.innerHTML = "";
-
-  const ranked = [...stateIndex.values()]
-    .filter(state => Number.isFinite(state.riskScoreTotal))
-    .sort((a, b) => a.riskScoreTotal - b.riskScoreTotal)
-    .slice(0, 5);
-
-  ranked.forEach(state => {
-    const li = document.createElement("li");
-    li.innerHTML = `<strong>${state.state}</strong> <span style="color:#6B7280;">(${state.riskScoreTotal})</span>`;
-    ui.topRiskList.appendChild(li);
+   const li = document.createElement("li");
+   
+   const link = document.createElement("a");
+   link.href = "#";
+   link.textContent = `${state.state} (${state.riskScoreTotal})`;
+   link.style.fontWeight = "600";
+   
+   link.addEventListener("click", (e) => {
+     e.preventDefault();
+     renderStatePanel(state.state);
+   });
+   
+   li.appendChild(link);
+   ui.topRiskList.appendChild(li);
   });
 }
 
