@@ -1,427 +1,747 @@
-/* global mapboxgl */
-const MAPBOX_TOKEN = window.MAPBOX_TOKEN;
-if (!MAPBOX_TOKEN || MAPBOX_TOKEN.includes("pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg")) {
+/* =========================================================
+   Arcus Climate Map — script.js (drop-in replacement)
+   - Fixes: filters/search not doing anything (wires UI)
+   - Fixes: click state → persistent side panel with clickable links
+   - Adds: fast highlight of matching states via feature-state (scales)
+   - Works with your fetches:
+       /data/us-states.geojson
+       /data/iso-rto.geojson
+       /api/states
+       /api/entries
+       /api/options
+========================================================= */
+
+/* -------------------------
+   0) Token + hard fail early
+-------------------------- */
+const MAPBOX_TOKEN = (window.pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg || "").trim();
+if (!MAPBOX_TOKEN) {
   console.warn("Mapbox token missing. Set window.MAPBOX_TOKEN in index.html.");
+  // Don't proceed—Mapbox will fail noisily otherwise.
+} else {
+  mapboxgl.accessToken = MAPBOX_TOKEN;
 }
 
-mapboxgl.accessToken = MAPBOX_TOKEN;
-
-const RISK_COLORS = {
-  "High Risk": "#b91c1c",
-  "Moderate Risk": "#f97316",
-  "Emerging Risk": "#facc15",
-  "Low Risk": "#22c55e",
-  "No Data": "#e5e7eb",
-};
-
-let viewMode = "state"; // "state" | "iso"
-let statesGeo = null;
-let isoGeo = null;
-
-let airtableStates = [];
-let airtableEntries = [];
-let filterOptions = [];
-
-let hoveredStateId = null;
+/* -------------------------
+   1) DOM helpers + UI refs
+-------------------------- */
+const $ = (sel) => document.querySelector(sel);
 
 const ui = {
-  btnViewState: document.getElementById("btnViewState"),
-  btnViewIso: document.getElementById("btnViewIso"),
-  stateSearch: document.getElementById("stateSearch"),
+  map: $("#map"),
 
-  filterCategory: document.getElementById("filterCategory"),
-  filterImpact: document.getElementById("filterImpact"),
-  filterType: document.getElementById("filterType"),
-  filterDirection: document.getElementById("filterDirection"),
-  filterSignalCategory: document.getElementById("filterSignalCategory"),
+  // panel
+  panel: $("#panel"),
+  panelClose: $("#panelClose"),
+  panelState: $("#panelState"),
+  panelMeta: $("#panelMeta"),
+  panelTopSignals: $("#panelTopSignals"),
+  panelEntriesHint: $("#panelEntriesHint"),
+  panelEntries: $("#panelEntries"),
 
-  btnClear: document.getElementById("btnClear"),
-
-  panel: document.getElementById("panel"),
-  panelClose: document.getElementById("panelClose"),
-  panelState: document.getElementById("panelState"),
-  panelMeta: document.getElementById("panelMeta"),
-  panelTopSignals: document.getElementById("panelTopSignals"),
-  panelEntries: document.getElementById("panelEntries"),
-  panelEntriesHint: document.getElementById("panelEntriesHint"),
+  // topbar + filters (best-effort: may not exist in your HTML)
+  // If your IDs differ, rename here ONLY.
+  stateSearch: $("#stateSearch") || $("#search") || $("#topSearch"),
+  filterCategory: $("#filterCategory"),
+  filterImpact: $("#filterImpact"),
+  filterType: $("#filterType"),
+  filterDirection: $("#filterDirection"),
+  filterSignalCategory: $("#filterSignalCategory"),
+  btnClear: $("#btnClear") || $("#clearFilters"),
+  btnModeState: $("#btnModeState") || $("#modeState"),
+  btnModeIso: $("#btnModeIso") || $("#modeIso"),
 };
 
-const map = new mapboxgl.Map({
-  container: "map",
-  style: "mapbox://styles/mapbox/light-v11",
-  center: [-98.5, 39.8],
-  zoom: 3.25,
-});
-
-map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-left");
-
-function safeStr(v) {
-  if (v == null) return "";
-  if (Array.isArray(v)) return v.join(", ");
-  return String(v);
+function safeText(el, text) {
+  if (!el) return;
+  el.textContent = text ?? "";
 }
 
-function normalizeStateName(name) {
-  return (name || "").trim();
-}
-
-function parseTopSignals(value) {
-  // Rollup could be an array or a comma-delimited string
-  if (!value) return [];
-  if (Array.isArray(value)) return value.filter(Boolean);
-  // Airtable sometimes returns as "a, b, c"
-  return String(value)
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-function getCurrentFilters() {
-  return {
-    q: ui.stateSearch.value.trim().toLowerCase(),
-    category: ui.filterCategory.value,
-    impact: ui.filterImpact.value,
-    type: ui.filterType.value,
-    direction: ui.filterDirection.value,
-    signalCategory: ui.filterSignalCategory.value,
-  };
-}
-
-function entryMatchesFilters(entry, filters) {
-  const fkeys = (entry.filterKeys || "").toLowerCase();
-
-  if (filters.category && !fkeys.includes(filters.category.toLowerCase())) return false;
-  if (filters.impact && !fkeys.includes(filters.impact.toLowerCase())) return false;
-  if (filters.type && !fkeys.includes(filters.type.toLowerCase())) return false;
-  if (filters.direction && !fkeys.includes(filters.direction.toLowerCase())) return false;
-
-  if (filters.signalCategory) {
-    // Signal Category is computed; we also include it in filtering directly
-    if ((entry.signalCategory || "") !== filters.signalCategory) return false;
-  }
-  return true;
-}
-
-function buildOptionsSelect(selectEl, label, values) {
-  selectEl.innerHTML = "";
-  const optAll = document.createElement("option");
-  optAll.value = "";
-  optAll.textContent = `All ${label}`;
-  selectEl.appendChild(optAll);
-
-  for (const v of values) {
-    const opt = document.createElement("option");
-    opt.value = v;
-    opt.textContent = v;
-    selectEl.appendChild(opt);
-  }
-}
-
-function applyViewMode() {
-  const showStates = viewMode === "state";
-  const showIso = viewMode === "iso";
-
-  const vis = (layerId, on) => {
-    if (!map.getLayer(layerId)) return;
-    map.setLayoutProperty(layerId, "visibility", on ? "visible" : "none");
-  };
-
-  vis("states-fill", showStates);
-  vis("states-outline", showStates);
-
-  vis("iso-fill", showIso);
-  vis("iso-line", showIso);
-
-  ui.btnViewState.classList.toggle("segmented__btn--active", showStates);
-  ui.btnViewIso.classList.toggle("segmented__btn--active", showIso);
-}
-
-function openPanel() {
+function showPanel() {
+  if (!ui.panel) return;
   ui.panel.classList.remove("panel--hidden");
 }
-function closePanel() {
+
+function hidePanel() {
+  if (!ui.panel) return;
   ui.panel.classList.add("panel--hidden");
 }
 
-function badge(text) {
-  return `<span class="badge">${text}</span>`;
+/* -------------------------
+   2) Data holders
+-------------------------- */
+let map = null;
+let statesGeo = null;
+let isoGeo = null;
+
+let airtableStates = [];   // from /api/states
+let airtableEntries = [];  // from /api/entries
+let airtableOptions = [];  // from /api/options
+
+// Fast lookups
+let stateByName = new Map();          // "Virginia" -> stateObj
+let entriesByState = new Map();       // "Virginia" -> [entry,...]
+
+// Feature-state performance
+let hoveredStateId = null;
+let hoveredIsoId = null;
+let matchingStates = new Set();
+
+/* -------------------------
+   3) Utilities
+-------------------------- */
+function normalizeStateName(s) {
+  if (!s) return "";
+  return String(s).trim();
+}
+
+function toISODateYear(d) {
+  // expects something parseable; returns YYYY or empty
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return "";
+  return String(dt.getUTCFullYear());
+}
+
+function domainFromUrl(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function ensureFeatureIds(geo) {
+  // Feature-state requires feature ids. If none exist, assign stable-ish ids.
+  // Prefer existing id; otherwise use properties (NAME) or index.
+  geo.features.forEach((f, i) => {
+    if (f.id !== undefined && f.id !== null) return;
+    const name = f?.properties?.NAME || f?.properties?.name || f?.properties?.State || "";
+    f.id = name ? `${name}` : `${i}`;
+  });
+  return geo;
+}
+
+function setFeatureStateSafe(sourceId, featureId, stateObj) {
+  if (!map) return;
+  try {
+    map.setFeatureState({ source: sourceId, id: featureId }, stateObj);
+  } catch (_) {
+    // ignore
+  }
+}
+
+/* -------------------------
+   4) Fetch helpers
+-------------------------- */
+async function fetchJson(url) {
+  const res = await fetch(url, { cache: "no-store" });
+  const text = await res.text();
+
+  // If a 404 HTML page sneaks in, this gives a helpful error
+  try {
+    const json = JSON.parse(text);
+    if (!res.ok) {
+      throw new Error(json?.error || `Request failed: ${url} (${res.status})`);
+    }
+    return json;
+  } catch (e) {
+    const head = text.slice(0, 80).replace(/\s+/g, " ");
+    throw new Error(`Non-JSON response from ${url} (${res.status}). Body starts: ${head}`);
+  }
+}
+
+/* -------------------------
+   5) Filter wiring + logic
+-------------------------- */
+function getCurrentFilters() {
+  const val = (el) => (el ? String(el.value || "").trim() : "");
+  const search = (ui.stateSearch ? String(ui.stateSearch.value || "").trim() : "");
+
+  return {
+    search,
+    category: val(ui.filterCategory),
+    impact: val(ui.filterImpact),
+    type: val(ui.filterType),
+    direction: val(ui.filterDirection),
+    signalCategory: val(ui.filterSignalCategory),
+  };
+}
+
+function matchesSelect(filterValue, recordValue) {
+  if (!filterValue) return true;
+  if (!recordValue) return false;
+  return String(recordValue).trim() === String(filterValue).trim();
+}
+
+function entryMatchesFilters(entry, filters) {
+  // Search: if user types something, match against title + summary + state
+  if (filters.search) {
+    const q = filters.search.toLowerCase();
+    const blob = `${entry.title || ""} ${entry.summary || ""} ${entry.state || ""}`.toLowerCase();
+    if (!blob.includes(q)) return false;
+  }
+
+  if (!matchesSelect(filters.category, entry.category)) return false;
+  if (!matchesSelect(filters.impact, entry.impactLevel)) return false;
+  if (!matchesSelect(filters.type, entry.signalType)) return false;
+  if (!matchesSelect(filters.direction, entry.signalDirection)) return false;
+  if (!matchesSelect(filters.signalCategory, entry.signalCategory)) return false;
+
+  return true;
+}
+
+/* -------------------------
+   6) Populate filter dropdowns from /api/options
+-------------------------- */
+function buildSelect(el, options, placeholder = "All") {
+  if (!el) return;
+
+  // preserve current selection if possible
+  const prev = String(el.value || "");
+
+  el.innerHTML = "";
+  const opt0 = document.createElement("option");
+  opt0.value = "";
+  opt0.textContent = placeholder;
+  el.appendChild(opt0);
+
+  for (const o of options) {
+    const opt = document.createElement("option");
+    opt.value = o;
+    opt.textContent = o;
+    el.appendChild(opt);
+  }
+
+  // restore selection if exists
+  if (prev && options.includes(prev)) el.value = prev;
+}
+
+function wireOptionsIntoUI() {
+  // /api/options should include groups like:
+  // { option, filterGroup } or { Option, Filter Group } etc.
+  const norm = airtableOptions.map((r) => ({
+    option: r.option ?? r.Option ?? r.name ?? r.Name ?? r.value ?? r.Value,
+    group: r.filterGroup ?? r.FilterGroup ?? r["Filter Group"] ?? r.group ?? r.Group,
+    active: r.active ?? r.Active ?? true,
+  }));
+
+  const byGroup = new Map();
+  for (const r of norm) {
+    if (!r.option || !r.group) continue;
+    if (r.active === false) continue;
+    if (!byGroup.has(r.group)) byGroup.set(r.group, new Set());
+    byGroup.get(r.group).add(String(r.option));
+  }
+
+  const list = (g) => Array.from(byGroup.get(g) || []).sort((a, b) => a.localeCompare(b));
+
+  // These group names must match what you use in Filter Options table
+  buildSelect(ui.filterCategory, list("Category"), "All Categories");
+  buildSelect(ui.filterImpact, list("Impact Level"), "All Impact Levels");
+  buildSelect(ui.filterType, list("Signal Type"), "All Signal Types");
+  buildSelect(ui.filterDirection, list("Signal Direction"), "All Directions");
+  buildSelect(ui.filterSignalCategory, list("Signal Category"), "All Signal Categories");
+}
+
+/* -------------------------
+   7) Build state + entry indexes
+-------------------------- */
+function indexAirtableData() {
+  stateByName = new Map();
+  entriesByState = new Map();
+
+  // Normalize states
+  for (const s of airtableStates) {
+    const name = normalizeStateName(s.state ?? s.State ?? s.name ?? s.NAME);
+    if (!name) continue;
+    stateByName.set(name, {
+      state: name,
+      calculatedRiskLevel: s.calculatedRiskLevel ?? s["Calculated Risk Level"] ?? s.riskLevel ?? s["Risk Level"],
+      riskScoreTotal: s.riskScoreTotal ?? s["Risk Score Total"],
+      entryCount: s.entryCount ?? s["Entry Count"],
+      topRiskSignals: s.topRiskSignals ?? s["Top Risk Signals"] ?? [],
+    });
+  }
+
+  // Normalize entries
+  const normalizedEntries = [];
+  for (const e of airtableEntries) {
+    const state = normalizeStateName(e.state ?? e.State ?? e["State (from State)"] ?? e["State"]);
+    if (!state) continue;
+
+    const entry = {
+      title: e.title ?? e.Title ?? "",
+      summary: e.summary ?? e.Summary ?? "",
+      link: e.link ?? e.Link ?? "",
+      publishedDate: e.publishedDate ?? e["Published Date"] ?? e.date ?? e.Date ?? "",
+      state,
+      category: e.category ?? e["Category (linked)"] ?? e.Category ?? "",
+      impactLevel: e.impactLevel ?? e["Impact Level (linked)"] ?? e["Impact Level"] ?? "",
+      signalType: e.signalType ?? e["Signal Type (linked)"] ?? e["Signal Type"] ?? "",
+      signalDirection: e.signalDirection ?? e["Signal Direction (linked)"] ?? e["Signal Direction"] ?? "",
+      signalCategory: e.signalCategory ?? e["Signal Category"] ?? "",
+      impactRank: e.impactRank ?? e["Impact Rank"] ?? "",
+      sourceDomain: e.sourceDomain ?? e["Source Domain"] ?? domainFromUrl(e.link),
+    };
+
+    normalizedEntries.push(entry);
+    if (!entriesByState.has(state)) entriesByState.set(state, []);
+    entriesByState.get(state).push(entry);
+  }
+
+  // Sort entries within state for nicer panel (impactRank asc, then newest)
+  for (const [state, arr] of entriesByState.entries()) {
+    arr.sort((a, b) => {
+      const ar = Number(a.impactRank || 999);
+      const br = Number(b.impactRank || 999);
+      if (ar !== br) return ar - br;
+
+      const ad = new Date(a.publishedDate || 0).getTime() || 0;
+      const bd = new Date(b.publishedDate || 0).getTime() || 0;
+      return bd - ad;
+    });
+  }
+
+  return normalizedEntries;
+}
+
+/* -------------------------
+   8) Panel rendering (clickable links)
+-------------------------- */
+function renderTopSignalsList(stateName) {
+  if (!ui.panelTopSignals) return;
+  ui.panelTopSignals.innerHTML = "";
+
+  const s = stateByName.get(stateName);
+  const top = Array.isArray(s?.topRiskSignals) ? s.topRiskSignals : [];
+
+  // If Airtable returns a single string with commas, handle it
+  const items = Array.isArray(top) ? top : String(top || "").split(",").map((x) => x.trim()).filter(Boolean);
+
+  if (!items.length) {
+    const li = document.createElement("li");
+    li.className = "muted";
+    li.textContent = "No top signals yet.";
+    ui.panelTopSignals.appendChild(li);
+    return;
+  }
+
+  for (const t of items.slice(0, 5)) {
+    const li = document.createElement("li");
+    li.textContent = t;
+    ui.panelTopSignals.appendChild(li);
+  }
+}
+
+function renderEntriesList(stateName) {
+  if (!ui.panelEntries) return;
+  ui.panelEntries.innerHTML = "";
+
+  const filters = getCurrentFilters();
+  const entries = (entriesByState.get(stateName) || []).filter((e) => entryMatchesFilters(e, filters));
+
+  safeText(ui.panelEntriesHint, entries.length ? `${entries.length} matching entries` : "No matching entries");
+
+  if (!entries.length) {
+    const li = document.createElement("li");
+    li.className = "muted";
+    li.textContent = "Try clearing filters.";
+    ui.panelEntries.appendChild(li);
+    return;
+  }
+
+  for (const e of entries.slice(0, 30)) {
+    const li = document.createElement("li");
+    li.className = "entry";
+
+    const year = toISODateYear(e.publishedDate);
+    const metaParts = [
+      e.category ? e.category : null,
+      e.impactLevel ? e.impactLevel : null,
+      year ? year : null,
+      e.sourceDomain ? e.sourceDomain : null,
+    ].filter(Boolean);
+
+    // Clickable title
+    const titleHtml = e.link
+      ? `<a href="${escapeHtml(e.link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(e.title || "Untitled")}</a>`
+      : `${escapeHtml(e.title || "Untitled")}`;
+
+    li.innerHTML = `
+      <div class="entry__title">${titleHtml}</div>
+      ${metaParts.length ? `<div class="entry__meta">${escapeHtml(metaParts.join(" • "))}</div>` : ""}
+      ${e.summary ? `<div class="entry__summary">${escapeHtml(e.summary)}</div>` : ""}
+    `;
+
+    ui.panelEntries.appendChild(li);
+  }
 }
 
 function renderPanelForState(stateName) {
+  safeText(ui.panelState, stateName);
+
+  const s = stateByName.get(stateName);
+  const risk = s?.calculatedRiskLevel || s?.riskLevel || "";
+  const score = (s?.riskScoreTotal ?? "").toString();
+  const count = (s?.entryCount ?? "").toString();
+
+  const meta = [
+    risk ? `Risk: ${risk}` : null,
+    score ? `Score: ${score}` : null,
+    count ? `Entries: ${count}` : null,
+  ].filter(Boolean).join(" • ");
+
+  safeText(ui.panelMeta, meta);
+
+  renderTopSignalsList(stateName);
+  renderEntriesList(stateName);
+  showPanel();
+}
+
+/* -------------------------
+   9) Match-highlighting (fast, scalable)
+-------------------------- */
+function recomputeMatchesAndHighlight() {
+  if (!map || !statesGeo) return;
+
   const filters = getCurrentFilters();
-  const st = airtableStates.find((s) => s.state === stateName);
+  const next = new Set();
 
-  const risk = st?.calculatedRiskLevel || "No Data";
-  const count = st?.entryCount ?? 0;
-  const score = st?.riskScoreTotal ?? 0;
+  // Determine which states have any matching entries
+  for (const e of airtableEntries) {
+    const state = normalizeStateName(e.state ?? e.State ?? e["State (from State)"]);
+    if (!state) continue;
 
-  ui.panelState.textContent = stateName;
-  ui.panelMeta.textContent = `Calculated risk: ${risk} • Signals: ${count} • Score: ${score}`;
+    // Use normalized “view” of entry for filter checks
+    const entry = {
+      title: e.title ?? e.Title ?? "",
+      summary: e.summary ?? e.Summary ?? "",
+      state,
+      category: e.category ?? e["Category (linked)"] ?? e.Category ?? "",
+      impactLevel: e.impactLevel ?? e["Impact Level (linked)"] ?? e["Impact Level"] ?? "",
+      signalType: e.signalType ?? e["Signal Type (linked)"] ?? e["Signal Type"] ?? "",
+      signalDirection: e.signalDirection ?? e["Signal Direction (linked)"] ?? e["Signal Direction"] ?? "",
+      signalCategory: e.signalCategory ?? e["Signal Category"] ?? "",
+    };
 
-  // Top signals (rollup)
-  ui.panelTopSignals.innerHTML = "";
-  const topSignals = st?.topRiskSignals || [];
-  if (topSignals.length === 0) {
-    ui.panelTopSignals.innerHTML = `<li class="hint">No top signals yet for this state.</li>`;
-  } else {
-    for (const s of topSignals) {
-      const li = document.createElement("li");
-      li.textContent = s;
-      ui.panelTopSignals.appendChild(li);
-    }
+    if (entryMatchesFilters(entry, filters)) next.add(state);
   }
 
-  // Matching entries under filters
-  const matching = airtableEntries
-    .filter((e) => e.state === stateName)
-    .filter((e) => entryMatchesFilters(e, filters))
-    .sort((a, b) => {
-      // Best-effort: Impact Rank asc, then date desc
-      const ar = a.impactRank ?? 99;
-      const br = b.impactRank ?? 99;
-      if (ar !== br) return ar - br;
-      return (b.publishedDate || "").localeCompare(a.publishedDate || "");
+  matchingStates = next;
+
+  // Flip feature-state on state polygons (fast)
+  for (const f of statesGeo.features) {
+    const name = normalizeStateName(f?.properties?.NAME || f?.properties?.name || "");
+    const has = matchingStates.has(name);
+    setFeatureStateSafe("states", f.id, { hasMatch: has });
+  }
+
+  // If panel is open, rerender it so list reflects filters
+  if (ui.panel && !ui.panel.classList.contains("panel--hidden")) {
+    const current = (ui.panelState?.textContent || "").trim();
+    if (current) renderPanelForState(current);
+  }
+}
+
+/* -------------------------
+   10) Map init + layers
+-------------------------- */
+function layerExists(id) {
+  return !!map.getLayer(id);
+}
+
+function safeSetVisibility(layerId, visible) {
+  if (!layerExists(layerId)) return;
+  map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
+}
+
+let viewMode = "state"; // "state" or "iso"
+
+function setLayerVisibility() {
+  const showStates = viewMode === "state";
+  const showIso = viewMode === "iso";
+
+  safeSetVisibility("states-fill", showStates);
+  safeSetVisibility("states-outline", showStates);
+
+  safeSetVisibility("iso-fill", showIso);
+  safeSetVisibility("iso-line", showIso);
+
+  map.getCanvas().style.cursor = "";
+}
+
+function clearFeatureStates() {
+  // clear hover on states
+  if (hoveredStateId !== null) {
+    setFeatureStateSafe("states", hoveredStateId, { hover: false });
+  }
+  hoveredStateId = null;
+
+  // clear hover on iso
+  if (hoveredIsoId !== null) {
+    setFeatureStateSafe("iso", hoveredIsoId, { hover: false });
+  }
+  hoveredIsoId = null;
+}
+
+function initMap() {
+  if (!MAPBOX_TOKEN) return;
+
+  map = new mapboxgl.Map({
+    container: "map",
+    style: "mapbox://styles/mapbox/light-v11",
+    center: [-98.5, 39.5],
+    zoom: 3.4,
+  });
+
+  map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right");
+
+  map.on("load", () => {
+    // Sources
+    statesGeo = ensureFeatureIds(statesGeo);
+    isoGeo = ensureFeatureIds(isoGeo);
+
+    map.addSource("states", { type: "geojson", data: statesGeo });
+    map.addSource("iso", { type: "geojson", data: isoGeo });
+
+    // STATES fill — uses existing properties if present; otherwise feature-state only
+    map.addLayer({
+      id: "states-fill",
+      type: "fill",
+      source: "states",
+      paint: {
+        "fill-color": [
+          "case",
+          // If you have a risk level property on the geojson already, prefer it
+          ["match", ["get", "Calculated Risk Level"],
+            "High Risk", "#ef4444",
+            "Moderate Risk", "#f59e0b",
+            "Emerging Risk", "#fb7185",
+            "Low Risk", "#60a5fa",
+            /* default */ "#d1d5db"
+          ],
+          // fallback if not present
+          "#d1d5db"
+        ],
+        "fill-opacity": [
+          "case",
+          ["boolean", ["feature-state", "hover"], false], 0.85,
+          ["boolean", ["feature-state", "hasMatch"], false], 0.78,
+          0.60
+        ],
+      },
     });
 
-  ui.panelEntriesHint.textContent =
-    matching.length === 0
-      ? "No entries match your current filters."
-      : `${matching.length} entry(s) match your current filters.`;
+    map.addLayer({
+      id: "states-outline",
+      type: "line",
+      source: "states",
+      paint: {
+        "line-width": [
+          "case",
+          ["boolean", ["feature-state", "hasMatch"], false], 1.8,
+          1.0
+        ],
+        "line-color": [
+          "case",
+          ["boolean", ["feature-state", "hasMatch"], false], "#111827",
+          "#9ca3af"
+        ],
+      },
+    });
 
-  ui.panelEntries.innerHTML = "";
-  for (const e of matching.slice(0, 50)) {
-    const li = document.createElement("li");
+    // ISO layers
+    map.addLayer({
+      id: "iso-fill",
+      type: "fill",
+      source: "iso",
+      layout: { visibility: "none" },
+      paint: {
+        "fill-color": "#3b82f6",
+        "fill-opacity": [
+          "case",
+          ["boolean", ["feature-state", "hover"], false], 0.18,
+          0.10
+        ],
+      },
+    });
 
-    const top = [
-      badge(e.category || "—"),
-      badge(e.impact || "—"),
-      badge(e.signalType || "—"),
-      badge(e.signalDirection || "—"),
-      badge(e.signalCategory || "—"),
-    ].join(" ");
+    map.addLayer({
+      id: "iso-line",
+      type: "line",
+      source: "iso",
+      layout: { visibility: "none" },
+      paint: {
+        "line-width": 2,
+        "line-color": "#1f2937",
+      },
+    });
 
-    li.innerHTML = `
-      <div class="entry__top">${top}</div>
-      <div><a href="${e.url}" target="_blank" rel="noopener">${e.title}</a></div>
-      <div class="hint">${e.publishedDate || ""}</div>
-    `;
-    ui.panelEntries.appendChild(li);
-  }
+    // Hover/click interactions for STATES
+    map.on("mousemove", "states-fill", (e) => {
+      map.getCanvas().style.cursor = "pointer";
+      const f = e.features?.[0];
+      if (!f) return;
 
-  openPanel();
+      if (hoveredStateId !== null && hoveredStateId !== f.id) {
+        setFeatureStateSafe("states", hoveredStateId, { hover: false });
+      }
+      hoveredStateId = f.id;
+      setFeatureStateSafe("states", hoveredStateId, { hover: true });
+    });
+
+    map.on("mouseleave", "states-fill", () => {
+      map.getCanvas().style.cursor = "";
+      if (hoveredStateId !== null) setFeatureStateSafe("states", hoveredStateId, { hover: false });
+      hoveredStateId = null;
+    });
+
+    map.on("click", "states-fill", (e) => {
+      const f = e.features?.[0];
+      if (!f) return;
+      const stateName = normalizeStateName(f?.properties?.NAME || f?.properties?.name || "");
+      if (!stateName) return;
+      renderPanelForState(stateName);
+    });
+
+    // Hover/click for ISO
+    map.on("mousemove", "iso-fill", (e) => {
+      map.getCanvas().style.cursor = "pointer";
+      const f = e.features?.[0];
+      if (!f) return;
+
+      if (hoveredIsoId !== null && hoveredIsoId !== f.id) {
+        setFeatureStateSafe("iso", hoveredIsoId, { hover: false });
+      }
+      hoveredIsoId = f.id;
+      setFeatureStateSafe("iso", hoveredIsoId, { hover: true });
+    });
+
+    map.on("mouseleave", "iso-fill", () => {
+      map.getCanvas().style.cursor = "";
+      if (hoveredIsoId !== null) setFeatureStateSafe("iso", hoveredIsoId, { hover: false });
+      hoveredIsoId = null;
+    });
+
+    map.on("click", "iso-fill", (e) => {
+      const f = e.features?.[0];
+      if (!f) return;
+      // Simple: show name in panel title for now
+      const isoName = normalizeStateName(f?.properties?.iso || f?.properties?.NAME || "ISO / RTO");
+      safeText(ui.panelState, isoName);
+      safeText(ui.panelMeta, "ISO/RTO view (click a state for details)");
+      if (ui.panelTopSignals) ui.panelTopSignals.innerHTML = "";
+      if (ui.panelEntries) ui.panelEntries.innerHTML = "";
+      showPanel();
+    });
+
+    // Close panel
+    if (ui.panelClose) ui.panelClose.addEventListener("click", hidePanel);
+
+    // Mode buttons
+    if (ui.btnModeState) {
+      ui.btnModeState.addEventListener("click", () => {
+        viewMode = "state";
+        clearFeatureStates();
+        setLayerVisibility();
+      });
+    }
+    if (ui.btnModeIso) {
+      ui.btnModeIso.addEventListener("click", () => {
+        viewMode = "iso";
+        clearFeatureStates();
+        setLayerVisibility();
+      });
+    }
+
+    // Wire UI listeners (search/filters)
+    wireUI();
+
+    // Initial compute
+    recomputeMatchesAndHighlight();
+  });
 }
 
-function setStateFillByRisk() {
-  if (!map.getLayer("states-fill")) return;
-
-  map.setPaintProperty("states-fill", "fill-color", [
-    "match",
-    ["get", "riskLevel"],
-    "High Risk", RISK_COLORS["High Risk"],
-    "Moderate Risk", RISK_COLORS["Moderate Risk"],
-    "Emerging Risk", RISK_COLORS["Emerging Risk"],
-    "Low Risk", RISK_COLORS["Low Risk"],
-    RISK_COLORS["No Data"],
-  ]);
-
-  map.setPaintProperty("states-fill", "fill-opacity", [
-    "case",
-    ["boolean", ["feature-state", "hover"], false],
-    0.85,
-    0.70,
-  ]);
-}
-
-async function loadAllData() {
-  // Load geojsons
-  const [statesRes, isoRes, stRes, enRes, optRes] = await Promise.all([
-    fetch("./data/us-states.geojson"),
-    fetch("./data/iso-rto.geojson"),
-    fetch("/api/states"),
-    fetch("/api/entries"),
-    fetch("/api/options"),
-  ]);
-
-  statesGeo = await statesRes.json();
-  isoGeo = await isoRes.json();
-
-  const stJson = await stRes.json();
-  const enJson = await enRes.json();
-  const optJson = await optRes.json();
-
-  airtableStates = stJson.states || [];
-  airtableEntries = enJson.entries || [];
-  filterOptions = optJson.options || [];
-
-  // Build select filters from options table (preferred), else fallback to observed values.
-  const group = (g) =>
-    filterOptions
-      .filter((o) => o.group === g && o.active)
-      .sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999))
-      .map((o) => o.option);
-
-  const categories = group("Category");
-  const impacts = group("Impact Level");
-  const types = group("Signal Type");
-  const directions = group("Signal Direction");
-
-  buildOptionsSelect(ui.filterCategory, "Categories", categories.length ? categories : [...new Set(airtableEntries.map(e => e.category).filter(Boolean))].sort());
-  buildOptionsSelect(ui.filterImpact, "Impacts", impacts.length ? impacts : [...new Set(airtableEntries.map(e => e.impact).filter(Boolean))].sort());
-  buildOptionsSelect(ui.filterType, "Types", types.length ? types : [...new Set(airtableEntries.map(e => e.signalType).filter(Boolean))].sort());
-  buildOptionsSelect(ui.filterDirection, "Directions", directions.length ? directions : [...new Set(airtableEntries.map(e => e.signalDirection).filter(Boolean))].sort());
-
-  buildOptionsSelect(ui.filterSignalCategory, "Signal Categories", ["Risk", "Neutral", "Positive"]);
-
-  // Join state intelligence onto geojson features by NAME
-  const byName = new Map(airtableStates.map((s) => [s.state, s]));
-
-  for (const f of statesGeo.features) {
-    const name = normalizeStateName(f.properties?.NAME);
-    const st = byName.get(name);
-
-    f.properties.riskLevel = st?.calculatedRiskLevel || "No Data";
-    f.properties.riskScoreTotal = st?.riskScoreTotal ?? 0;
-    f.properties.entryCount = st?.entryCount ?? 0;
-    f.properties.topRiskSignals = (st?.topRiskSignals || []).join(" | ");
-  }
-}
-
+/* -------------------------
+   11) UI wiring (this fixes “filters do nothing”)
+-------------------------- */
 function wireUI() {
-  ui.btnViewState.addEventListener("click", () => {
-    viewMode = "state";
-    applyViewMode();
-  });
-  ui.btnViewIso.addEventListener("click", () => {
-    viewMode = "iso";
-    applyViewMode();
-  });
+  const onChange = () => recomputeMatchesAndHighlight();
 
-  ui.btnClear.addEventListener("click", () => {
-    ui.stateSearch.value = "";
-    ui.filterCategory.value = "";
-    ui.filterImpact.value = "";
-    ui.filterType.value = "";
-    ui.filterDirection.value = "";
-    ui.filterSignalCategory.value = "";
-    // panel refresh if open
-    if (!ui.panel.classList.contains("panel--hidden")) {
-      const current = ui.panelState.textContent;
-      if (current) renderPanelForState(current);
-    }
-  });
+  if (ui.stateSearch) ui.stateSearch.addEventListener("input", onChange);
+  if (ui.filterCategory) ui.filterCategory.addEventListener("change", onChange);
+  if (ui.filterImpact) ui.filterImpact.addEventListener("change", onChange);
+  if (ui.filterType) ui.filterType.addEventListener("change", onChange);
+  if (ui.filterDirection) ui.filterDirection.addEventListener("change", onChange);
+  if (ui.filterSignalCategory) ui.filterSignalCategory.addEventListener("change", onChange);
 
-  const refreshPanelIfOpen = () => {
-    if (ui.panel.classList.contains("panel--hidden")) return;
-    const current = ui.panelState.textContent;
-    if (current) renderPanelForState(current);
-  };
-
-  ui.stateSearch.addEventListener("input", refreshPanelIfOpen);
-  ui.filterCategory.addEventListener("change", refreshPanelIfOpen);
-  ui.filterImpact.addEventListener("change", refreshPanelIfOpen);
-  ui.filterType.addEventListener("change", refreshPanelIfOpen);
-  ui.filterDirection.addEventListener("change", refreshPanelIfOpen);
-  ui.filterSignalCategory.addEventListener("change", refreshPanelIfOpen);
-
-  ui.panelClose.addEventListener("click", closePanel);
+  if (ui.btnClear) {
+    ui.btnClear.addEventListener("click", () => {
+      if (ui.stateSearch) ui.stateSearch.value = "";
+      if (ui.filterCategory) ui.filterCategory.value = "";
+      if (ui.filterImpact) ui.filterImpact.value = "";
+      if (ui.filterType) ui.filterType.value = "";
+      if (ui.filterDirection) ui.filterDirection.value = "";
+      if (ui.filterSignalCategory) ui.filterSignalCategory.value = "";
+      recomputeMatchesAndHighlight();
+    });
+  }
 }
 
-map.on("load", async () => {
-  await loadAllData();
+/* -------------------------
+   12) Bootstrap: load everything then init
+-------------------------- */
+async function main() {
+  try {
+    const [
+      statesG,
+      isoG,
+      statesApi,
+      entriesApi,
+      optionsApi
+    ] = await Promise.all([
+      fetchJson("/data/us-states.geojson"),
+      fetchJson("/data/iso-rto.geojson"),
+      fetchJson("/api/states"),
+      fetchJson("/api/entries"),
+      fetchJson("/api/options"),
+    ]);
 
-  // Sources
-  map.addSource("states", { type: "geojson", data: statesGeo, generateId: true });
-  map.addSource("iso", { type: "geojson", data: isoGeo });
+    statesGeo = statesG;
+    isoGeo = isoG;
+    airtableStates = Array.isArray(statesApi) ? statesApi : (statesApi?.states || statesApi?.data || []);
+    airtableEntries = Array.isArray(entriesApi) ? entriesApi : (entriesApi?.entries || entriesApi?.data || []);
+    airtableOptions = Array.isArray(optionsApi) ? optionsApi : (optionsApi?.options || optionsApi?.data || []);
 
-  // States layers
-  map.addLayer({
-    id: "states-fill",
-    type: "fill",
-    source: "states",
-    paint: {
-      "fill-color": "#e5e7eb",
-      "fill-opacity": 0.70,
-    },
-  });
+    // Build indexes + filters
+    indexAirtableData();
+    wireOptionsIntoUI();
 
-  map.addLayer({
-    id: "states-outline",
-    type: "line",
-    source: "states",
-    paint: {
-      "line-color": "#9ca3af",
-      "line-width": [
-        "case",
-        ["boolean", ["feature-state", "selected"], false],
-        2.5,
-        1,
-      ],
-      "line-opacity": 0.9,
-    },
-  });
+    // Optional: also bake calculated risk into state geojson properties if not present
+    // so the fill-color match works
+    const by = stateByName;
+    statesGeo.features.forEach((f) => {
+      const name = normalizeStateName(f?.properties?.NAME || f?.properties?.name || "");
+      const s = by.get(name);
+      if (s && (!f.properties["Calculated Risk Level"] || f.properties["Calculated Risk Level"] === "")) {
+        f.properties["Calculated Risk Level"] = s.calculatedRiskLevel || "";
+      }
+    });
 
-  // ISO/RTO layers (simple; you can enhance later)
-  map.addLayer({
-    id: "iso-fill",
-    type: "fill",
-    source: "iso",
-    layout: { visibility: "none" },
-    paint: {
-      "fill-color": "#475569",
-      "fill-opacity": 0.08,
-    },
-  });
+    // Start map
+    initMap();
+  } catch (err) {
+    console.error(err);
+    alert(String(err.message || err));
+  }
+}
 
-  map.addLayer({
-    id: "iso-line",
-    type: "line",
-    source: "iso",
-    layout: { visibility: "none" },
-    paint: {
-      "line-color": "#475569",
-      "line-width": 2,
-      "line-opacity": 0.9,
-    },
-  });
-
-  setStateFillByRisk();
-  applyViewMode();
-  wireUI();
-
-  // Hover state
-  map.on("mousemove", "states-fill", (e) => {
-    map.getCanvas().style.cursor = "pointer";
-    if (!e.features?.length) return;
-
-    const f = e.features[0];
-    const id = f.id;
-
-    if (hoveredStateId !== null && hoveredStateId !== id) {
-      map.setFeatureState({ source: "states", id: hoveredStateId }, { hover: false });
-    }
-    hoveredStateId = id;
-    map.setFeatureState({ source: "states", id }, { hover: true });
-  });
-
-  map.on("mouseleave", "states-fill", () => {
-    map.getCanvas().style.cursor = "";
-    if (hoveredStateId !== null) {
-      map.setFeatureState({ source: "states", id: hoveredStateId }, { hover: false });
-    }
-    hoveredStateId = null;
-  });
-
-  // Click → panel
-  map.on("click", "states-fill", (e) => {
-    if (!e.features?.length) return;
-    const f = e.features[0];
-    const name = normalizeStateName(f.properties?.NAME);
-
-    // mark selected (optional)
-    // Clear all selected states by brute-force update: re-set selected on clicked only
-    // (For large feature sets you’d track prevSelected)
-    map.setFeatureState({ source: "states", id: f.id }, { selected: true });
-
-    renderPanelForState(name);
-  });
-});
+main();
