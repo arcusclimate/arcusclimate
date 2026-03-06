@@ -558,24 +558,40 @@ function initMap() {
       }
     });
 
-    map.on("mousemove", "states-fill", (e) => {
-      const feature = e.features?.[0];
-      if (!feature) return;
-      map.getCanvas().style.cursor = "pointer";
+map.on("mousemove", "states-fill", (e) => {
+  const feature = e.features?.[0];
+  if (!feature) return;
+  map.getCanvas().style.cursor = "pointer";
 
-      if (hoveredStateId !== null && hoveredStateId !== feature.id) {
-        safeSetFeatureState("states", hoveredStateId, { hover: false });
-      }
+  if (hoveredStateId !== null && hoveredStateId !== feature.id) {
+    safeSetFeatureState("states", hoveredStateId, { hover: false });
+  }
 
-      hoveredStateId = feature.id;
-      safeSetFeatureState("states", hoveredStateId, { hover: true });
-    });
+  hoveredStateId = feature.id;
+  safeSetFeatureState("states", hoveredStateId, { hover: true });
 
-    map.on("mouseleave", "states-fill", () => {
-      map.getCanvas().style.cursor = "";
-      if (hoveredStateId !== null) safeSetFeatureState("states", hoveredStateId, { hover: false });
-      hoveredStateId = null;
-    });
+  const stateName = normalizeStateName(feature.properties?.NAME || feature.properties?.name || "");
+  const state = stateIndex.get(stateName);
+
+  showHoverTooltip(
+    e.point.x,
+    e.point.y,
+    `
+      <strong>${stateName}</strong><br>
+      Risk: ${state?.calculatedRiskLevel || "No Data"}<br>
+      Score: ${state?.riskScoreTotal ?? 0}<br>
+      Entries: ${state?.entryCount ?? 0}<br>
+      ISO/RTO: ${(state?.gridRegions || []).join(", ") || "—"}
+    `
+  );
+});
+
+map.on("mouseleave", "states-fill", () => {
+  map.getCanvas().style.cursor = "";
+  if (hoveredStateId !== null) safeSetFeatureState("states", hoveredStateId, { hover: false });
+  hoveredStateId = null;
+  hideHoverTooltip();
+});
 
     map.on("click", "states-fill", (e) => {
       const feature = e.features?.[0];
@@ -584,24 +600,44 @@ function initMap() {
       renderStatePanel(stateName);
     });
 
-    map.on("mousemove", "iso-fill", (e) => {
-      const feature = e.features?.[0];
-      if (!feature) return;
-      map.getCanvas().style.cursor = "pointer";
+map.on("mousemove", "iso-fill", (e) => {
+  const feature = e.features?.[0];
+  if (!feature) return;
+  map.getCanvas().style.cursor = "pointer";
 
-      if (hoveredIsoId !== null && hoveredIsoId !== feature.id) {
-        safeSetFeatureState("iso", hoveredIsoId, { hover: false });
-      }
+  if (hoveredIsoId !== null && hoveredIsoId !== feature.id) {
+    safeSetFeatureState("iso", hoveredIsoId, { hover: false });
+  }
 
-      hoveredIsoId = feature.id;
-      safeSetFeatureState("iso", hoveredIsoId, { hover: true });
-    });
+  hoveredIsoId = feature.id;
+  safeSetFeatureState("iso", hoveredIsoId, { hover: true });
 
-    map.on("mouseleave", "iso-fill", () => {
-      map.getCanvas().style.cursor = "";
-      if (hoveredIsoId !== null) safeSetFeatureState("iso", hoveredIsoId, { hover: false });
-      hoveredIsoId = null;
-    });
+  const isoName = String(feature.properties?.iso || "").trim();
+  const stateNames = isoToStates.get(isoName) || [];
+  const filters = getFilters();
+
+  const entryCount = stateNames
+    .flatMap(state => entriesByState.get(state) || [])
+    .filter(entry => entryMatchesFilters(entry, filters))
+    .length;
+
+  showHoverTooltip(
+    e.point.x,
+    e.point.y,
+    `
+      <strong>${isoName}</strong><br>
+      States: ${stateNames.length}<br>
+      Resources: ${entryCount}
+    `
+  );
+});
+
+map.on("mouseleave", "iso-fill", () => {
+  map.getCanvas().style.cursor = "";
+  if (hoveredIsoId !== null) safeSetFeatureState("iso", hoveredIsoId, { hover: false });
+  hoveredIsoId = null;
+  hideHoverTooltip();
+});
 
     map.on("click", "iso-fill", (e) => {
       const feature = e.features?.[0];
