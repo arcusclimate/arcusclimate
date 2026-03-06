@@ -296,3 +296,34 @@ html, body {
 .hover-tooltip--hidden {
   display: none;
 }
+
+.mini-panel {
+  position: absolute;
+  left: 14px;
+  bottom: 250px;
+  width: 255px;
+  z-index: 20;
+  background: rgba(255,255,255,.94);
+  border: 1px solid rgba(17,24,39,.10);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 10px 28px rgba(17,24,39,.12);
+}
+
+.mini-panel__title {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.mini-panel__list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.mini-panel__list li {
+  font-size: 12px;
+  line-height: 1.45;
+  margin-bottom: 6px;
+  color: #111827;
+}
