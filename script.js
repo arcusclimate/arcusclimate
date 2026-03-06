@@ -1,4 +1,10 @@
 const MAPBOX_TOKEN = typeof window !== "undefined" ? (window.MAPBOX_TOKEN || "").trim() : "";
+/* ===============================
+   Feature toggles (safe switches)
+================================ */
+
+const ENABLE_HOVER_TOOLTIPS = true;
+const ENABLE_ISO_PANEL = true;
 
 if (!MAPBOX_TOKEN) {
   console.error("Mapbox token missing. Set window.MAPBOX_TOKEN in index.html.");
