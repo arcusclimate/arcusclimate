@@ -215,6 +215,31 @@ function entryMatchesFilters(entry, filters) {
   return true;
 }
 
+function updateFilteredStateHighlight() {
+  if (!map || !map.getSource("states")) return;
+
+  const filters = getFilters();
+
+  const hasAnyFilter =
+    filters.search || filters.iso || filters.category || filters.impact ||
+    filters.type || filters.direction || filters.signalCategory;
+
+  const matchedStates = new Set();
+
+  if (hasAnyFilter) {
+    for (const [stateName, entries] of entriesByState.entries()) {
+      const hasMatch = entries.some(entry => entryMatchesFilters(entry, filters));
+      if (hasMatch) matchedStates.add(stateName);
+    }
+  }
+
+  statesGeo.features.forEach((feature) => {
+    const stateName = normalizeStateName(feature.properties?.NAME || feature.properties?.name || "");
+    const matched = hasAnyFilter ? matchedStates.has(stateName) : false;
+    safeSetFeatureState("states", feature.id, { filteredMatch: matched });
+  });
+}
+
 function renderTopSignals(items) {
   ui.panelTopSignals.innerHTML = "";
   if (!items.length) {
