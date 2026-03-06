@@ -31,8 +31,8 @@ const ui = {
 
 const RISK_COLORS = {
   "Low Risk": "#A8D5BA",
-  "Moderate Risk": "#F3E6A3",
   "Emerging Risk": "#F7C6C7",
+  "Moderate Risk": "#F3E6A3",
   "High Risk": "#E57373",
   "No Data": "#E5E7EB",
 };
@@ -444,8 +444,8 @@ function initMap() {
           "match",
           ["get", "calculatedRiskLevel"],
           "Low Risk", "#A8D5BA",
-          "Moderate Risk", "#F3E6A3",
           "Emerging Risk", "#F7C6C7",
+          "Moderate Risk", "#F3E6A3",
           "High Risk", "#E57373",
           "#E5E7EB"
         ],
