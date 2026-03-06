@@ -436,6 +436,17 @@ function bindUI() {
   });
 }
 
+function ensureStateFeatureIds() {
+  if (!statesGeo || !statesGeo.features) return;
+
+  statesGeo.features.forEach((feature, index) => {
+    if (feature.id !== undefined && feature.id !== null) return;
+
+    const name = normalizeStateName(feature.properties?.NAME || feature.properties?.name || "");
+    feature.id = name || index;
+  });
+}
+
 function initMap() {
   map = new mapboxgl.Map({
     container: "map",
@@ -450,7 +461,6 @@ function initMap() {
     map.addSource("states", {
       type: "geojson",
       data: statesGeo,
-      generateId: true
     });
 
     map.addSource("iso", {
@@ -599,6 +609,7 @@ async function main() {
 
     buildIndexes();
     attachStateRiskToGeoJSON();
+    ensureStateFeatureIds();
     fillFilters();
     bindUI();
     initMap();
