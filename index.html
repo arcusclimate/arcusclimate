@@ -66,6 +66,50 @@
 
   <div id="map"></div>
 
+  <!-- Add this anywhere inside <body> (ideally right after <div id="map"></div>) -->
+<div id="legend" class="legend">
+  <div class="legend__title">Risk Score</div>
+
+  <div class="legend__row">
+    <span class="legend__swatch" style="background:#A8D5BA;"></span>
+    <div class="legend__text">
+      <div class="legend__label">Low Risk</div>
+      <div class="legend__range" id="legendLowRange">Score: —</div>
+    </div>
+  </div>
+
+  <div class="legend__row">
+    <span class="legend__swatch" style="background:#F3E6A3;"></span>
+    <div class="legend__text">
+      <div class="legend__label">Moderate Risk</div>
+      <div class="legend__range" id="legendMedRange">Score: —</div>
+    </div>
+  </div>
+
+  <div class="legend__row">
+    <span class="legend__swatch" style="background:#F7C6C7;"></span>
+    <div class="legend__text">
+      <div class="legend__label">Emerging Risk</div>
+      <div class="legend__range" id="legendEmergRange">Score: —</div>
+    </div>
+  </div>
+
+  <div class="legend__row">
+    <span class="legend__swatch" style="background:#E57373;"></span>
+    <div class="legend__text">
+      <div class="legend__label">High Risk</div>
+      <div class="legend__range" id="legendHighRange">Score: —</div>
+    </div>
+  </div>
+
+  <div class="legend__divider"></div>
+
+  <div class="legend__note">
+    Scores are a weighted sum of signals (policy/regulatory, grid capacity, water, and market activity).
+    We classify risk by score bands and update as new entries are added.
+  </div>
+</div>
+
   <aside id="panel" class="panel panel--hidden">
     <div class="panel__header">
       <div>
