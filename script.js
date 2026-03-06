@@ -290,6 +290,21 @@ function renderStatePanel(stateName) {
   const filters = getFilters();
   const entries = (entriesByState.get(stateName) || []).filter(e => entryMatchesFilters(e, filters));
   renderEntries(entries);
+    if (!entries.length) {
+    const filters = getFilters();
+    const hasActiveFilters =
+      filters.search || filters.iso || filters.category || filters.impact ||
+      filters.type || filters.direction || filters.signalCategory;
+  
+    ui.panelEntriesHint.textContent = hasActiveFilters
+      ? "No resources match the current filters."
+      : "No resources available for this state.";
+  
+    ui.panelEntries.innerHTML = `<li>${hasActiveFilters
+      ? "Try clearing filters or choosing a different filter combination."
+      : "No linked resources were found for this state."}</li>`;
+    return;
+  }
 
   showPanel();
 }
