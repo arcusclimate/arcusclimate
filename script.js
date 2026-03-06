@@ -282,7 +282,7 @@ function renderStatePanel(stateName) {
     state.calculatedRiskLevel ? `Risk: ${state.calculatedRiskLevel}` : "",
     Number.isFinite(state.riskScoreTotal) ? `Score: ${state.riskScoreTotal}` : "",
     Number.isFinite(state.entryCount) ? `Entries: ${state.entryCount}` : "",
-    (state.gridRegions || []).length ? `ISO/RTO: ${state.gridRegions.join(", ")}` : ""
+   (state.gridRegions || []).length ? `ISO/RTO: ${state.gridRegions.join(", ")}` : ""
   ].filter(Boolean).join(" • ");
 
   renderTopSignals(state.topRiskSignals || []);
