@@ -137,7 +137,6 @@ function setFeatureStateSafe(source, id, state) {
   if (!map.getSource(source)) return;
   map.setFeatureState({ source, id }, state);
 }
-}
 
 /* -------------------------
    4) Fetch helpers
