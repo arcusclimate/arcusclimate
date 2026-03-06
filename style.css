@@ -299,8 +299,8 @@ html, body {
 
 .mini-panel {
   position: absolute;
-  left: 14px;
-  bottom: 250px;
+  right: 14px;
+  top: 250px;
   width: 255px;
   z-index: 20;
   background: rgba(255,255,255,.94);
@@ -311,9 +311,9 @@ html, body {
 }
 
 .mini-panel__title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .mini-panel__list {
