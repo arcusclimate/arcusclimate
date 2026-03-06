@@ -14,10 +14,13 @@
 /* -------------------------
    0) Token + hard fail early
 -------------------------- */
-const MAPBOX_TOKEN = (window."pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg" || "").trim();
+const MAPBOX_TOKEN =
+  typeof window !== "undefined" && typeof window.MAPBOX_TOKEN === "string"
+    ? window.MAPBOX_TOKEN.trim()
+    : "";
+
 if (!MAPBOX_TOKEN) {
-  console.warn("Mapbox token missing. Set window.MAPBOX_TOKEN in index.html.");
-  // Don't proceed—Mapbox will fail noisily otherwise.
+  console.error("Mapbox token missing. Set window.MAPBOX_TOKEN in index.html.");
 } else {
   mapboxgl.accessToken = MAPBOX_TOKEN;
 }
