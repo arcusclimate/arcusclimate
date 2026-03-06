@@ -528,21 +528,24 @@ map.addSource("iso", {
       type: "fill",
       source: "states",
       paint: {
-        "fill-color": [
+      "fill-color": [
         "match",
-        ["coalesce", ["get", "Calculated Risk Level"], ["get", "calculatedRiskLevel"]],
+        ["coalesce",
+          ["get", "calculatedRiskLevel"],
+          ["get", "Calculated Risk Level"],
+          ["get", "Calculated_Risk_Level"]
+        ],
         "Low Risk", "#A8D5BA",
         "Moderate Risk", "#F3E6A3",
         "Emerging Risk", "#F7C6C7",
         "High Risk", "#E57373",
         "#E5E7EB"
       ],
-        "fill-opacity": [
-          "case",
-          ["boolean", ["feature-state", "hover"], false], 0.85,
-          ["boolean", ["feature-state", "hasMatch"], false], 0.78,
-          0.60
-        ],
+         "fill-opacity": [
+           "case",
+           ["boolean", ["feature-state", "hover"], false], 0.85,
+           0.72
+         ],
       },
     });
 
