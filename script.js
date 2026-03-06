@@ -569,21 +569,6 @@ map.on("mousemove", "states-fill", (e) => {
 
   hoveredStateId = feature.id;
   safeSetFeatureState("states", hoveredStateId, { hover: true });
-
-  const stateName = normalizeStateName(feature.properties?.NAME || feature.properties?.name || "");
-  const state = stateIndex.get(stateName);
-
-  showHoverTooltip(
-    e.point.x,
-    e.point.y,
-    `
-      <strong>${stateName}</strong><br>
-      Risk: ${state?.calculatedRiskLevel || "No Data"}<br>
-      Score: ${state?.riskScoreTotal ?? 0}<br>
-      Entries: ${state?.entryCount ?? 0}<br>
-      ISO/RTO: ${(state?.gridRegions || []).join(", ") || "—"}
-    `
-  );
 });
 
 map.on("mouseleave", "states-fill", () => {
@@ -593,12 +578,12 @@ map.on("mouseleave", "states-fill", () => {
   hideHoverTooltip();
 });
 
-    map.on("click", "states-fill", (e) => {
-      const feature = e.features?.[0];
-      if (!feature) return;
-      const stateName = normalizeStateName(feature.properties?.NAME || feature.properties?.name || "");
-      renderStatePanel(stateName);
-    });
+map.on("click", "states-fill", (e) => {
+  const feature = e.features?.[0];
+  if (!feature) return;
+  const stateName = normalizeStateName(feature.properties?.NAME || feature.properties?.name || "");
+  renderStatePanel(stateName);
+});
 
 map.on("mousemove", "iso-fill", (e) => {
   const feature = e.features?.[0];
@@ -639,16 +624,16 @@ map.on("mouseleave", "iso-fill", () => {
   hideHoverTooltip();
 });
 
-    map.on("click", "iso-fill", (e) => {
-      const feature = e.features?.[0];
-      if (!feature) return;
-      const isoName = String(feature.properties?.iso || "").trim();
-      if (!isoName) return;
-      renderIsoPanel(isoName);
-    });
+map.on("click", "iso-fill", (e) => {
+  const feature = e.features?.[0];
+  if (!feature) return;
+  const isoName = String(feature.properties?.iso || "").trim();
+  if (!isoName) return;
+  renderIsoPanel(isoName);
+});
 
-    setLayerVisibility();
-    updateFilteredStateHighlight();
+setLayerVisibility();
+updateFilteredStateHighlight();
   });
 }
 
