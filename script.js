@@ -43,6 +43,17 @@ const RISK_COLORS = {
   "No Data": "#E5E7EB",
 };
 
+const ISO_COLORS = {
+  "PJM": "#7FB3D5",
+  "MISO": "#A3BE8C",
+  "SPP": "#EBCB8B",
+  "ERCOT": "#D08770",
+  "CAISO": "#88C0D0",
+  "NYISO": "#B48EAD",
+  "ISO-NE": "#81A1C1",
+  "WECC": "#D8DEE9"
+};
+
 let map;
 let statesGeo;
 let isoGeo;
