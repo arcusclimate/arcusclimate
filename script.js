@@ -511,7 +511,7 @@ function initMap() {
 
 map.addSource("states", {
   type: "geojson",
-  data: "./data/us-states.geojson",
+  data: "statesGeo",
   generateId: true
 });
 
@@ -527,19 +527,15 @@ map.addSource("iso", {
       type: "fill",
       source: "states",
       paint: {
-      "fill-color": [
-        "match",
-        ["coalesce",
-          ["get", "calculatedRiskLevel"],
-          ["get", "Calculated Risk Level"],
-          ["get", "Calculated_Risk_Level"]
-        ],
-        "Low Risk", "#A8D5BA",
-        "Moderate Risk", "#F3E6A3",
-        "Emerging Risk", "#F7C6C7",
-        "High Risk", "#E57373",
-        "#E5E7EB"
-      ],
+         "fill-color": [
+           "match",
+           ["get", "calculatedRiskLevel"],
+           "Low Risk", "#A8D5BA",
+           "Moderate Risk", "#F3E6A3",
+           "Emerging Risk", "#F7C6C7",
+           "High Risk", "#E57373",
+           "#E5E7EB"
+         ],
          "fill-opacity": [
            "case",
            ["boolean", ["feature-state", "hover"], false], 0.85,
@@ -745,6 +741,49 @@ function setLegendRanges({ low, moderate, emerging, high }) {
   if (hiEl) hiEl.textContent = `Score: ${high}`;
 }
 
+function attachStateRiskToGeoJSON() {
+  if (!statesGeo || !statesGeo.features || !airtableStates || !airtableStates.length) return;
+
+  // Build quick lookup from Airtable states by state name
+  const riskByState = new Map();
+
+  for (const s of airtableStates) {
+    const stateName = (s.state || s.State || "").trim();
+    if (!stateName) continue;
+
+    riskByState.set(stateName, {
+      calculatedRiskLevel:
+        s.calculatedRiskLevel ||
+        s["Calculated Risk Level"] ||
+        s.riskLevel ||
+        s["Risk Level"] ||
+        "",
+      riskScoreTotal:
+        s.riskScoreTotal ??
+        s["Risk Score Total"] ??
+        0,
+      entryCount:
+        s.entryCount ??
+        s["Entry Count"] ??
+        0
+    });
+  }
+
+  // Write those values directly onto each GeoJSON feature
+  statesGeo.features.forEach((feature) => {
+    const featureStateName =
+      (feature.properties?.NAME ||
+       feature.properties?.name ||
+       "").trim();
+
+    const match = riskByState.get(featureStateName);
+
+    feature.properties.calculatedRiskLevel = match?.calculatedRiskLevel || "";
+    feature.properties.riskScoreTotal = match?.riskScoreTotal || 0;
+    feature.properties.entryCount = match?.entryCount || 0;
+  });
+}
+
 /* -------------------------
    12) Bootstrap: load everything then init
 -------------------------- */
@@ -771,9 +810,11 @@ async function main() {
     airtableOptions = Array.isArray(optionsApi) ? optionsApi : (optionsApi?.options || optionsApi?.data || []);
 
     // Build indexes + filters
-    indexAirtableData();
-    wireOptionsIntoUI();
-     computeLegendRangesFromData();
+      indexAirtableData();
+      wireOptionsIntoUI();
+      computeLegendRangesFromData();
+      attachStateRiskToGeoJSON();
+      initMap();
 
     // Optional: also bake calculated risk into state geojson properties if not present
     // so the fill-color match works
