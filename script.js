@@ -1,13 +1,21 @@
-const MAPBOX_TOKEN = typeof window !== "undefined" ? (window.MAPBOX_TOKEN || "").trim() : "";
-/* ===============================
-   Feature toggles (safe switches)
-================================ */
+const MAPBOX_TOKEN = (() => {
+  if (typeof window === "undefined") return "";
+  return (window.__env?.MAPBOX_TOKEN || window.MAPBOX_TOKEN || "").trim();
+})();
 
 const ENABLE_HOVER_TOOLTIPS = true;
 const ENABLE_ISO_PANEL = true;
 
+const RISK_CONTEXT = {
+  "High Risk": "This state faces compounding grid, regulatory, and capacity constraints that make data center siting costly and uncertain. AI infrastructure growth here carries elevated operational and reputational risk.",
+  "Moderate Risk": "This state has meaningful infrastructure or regulatory headwinds. Growth is possible but requires careful diligence on grid capacity, procurement, and policy trajectory.",
+  "Emerging Risk": "This state shows early warning signals. Current conditions are manageable, but the risk profile is shifting — worth monitoring closely as AI compute demand grows.",
+  "Low Risk": "This state presents favorable conditions for AI infrastructure growth, with supportive grid capacity, policy environment, and limited near-term constraint signals.",
+  "No Data": ""
+};
+
 if (!MAPBOX_TOKEN) {
-  console.error("Mapbox token missing. Set window.MAPBOX_TOKEN in index.html.");
+  console.error("Mapbox token missing. Set MAPBOX_TOKEN as a Vercel environment variable.");
 } else {
   mapboxgl.accessToken = MAPBOX_TOKEN;
 }
@@ -17,11 +25,15 @@ const ui = {
   panelClose: document.getElementById("panelClose"),
   panelTitle: document.getElementById("panelTitle"),
   panelMeta: document.getElementById("panelMeta"),
+  panelRiskContext: document.getElementById("panelRiskContext"),
   panelTopSignals: document.getElementById("panelTopSignals"),
   panelEntriesHint: document.getElementById("panelEntriesHint"),
   panelEntries: document.getElementById("panelEntries"),
   hoverTooltip: document.getElementById("hoverTooltip"),
-   topRiskList: document.getElementById("topRiskList"),
+  topRiskList: document.getElementById("topRiskList"),
+  legendLastUpdated: document.getElementById("legendLastUpdated"),
+  onboardingBanner: document.getElementById("onboardingBanner"),
+  onboardingClose: document.getElementById("onboardingClose"),
 
   stateSearch: document.getElementById("stateSearch"),
   filterIso: document.getElementById("filterIso"),
@@ -38,7 +50,7 @@ const ui = {
 
 const RISK_COLORS = {
   "Low Risk": "#A8D5BA",
-  "Emerging Risk": "##F3E6A3",
+  "Emerging Risk": "#F3E6AE",
   "Moderate Risk": "#F7C6C7",
   "High Risk": "#E57373",
   "No Data": "#E5E7EB",
@@ -70,6 +82,7 @@ let currentViewMode = "state";
 let currentContext = null;
 let hoveredStateId = null;
 let hoveredIsoId = null;
+let selectedStateId = null;
 
 async function fetchJson(url) {
   const res = await fetch(url);
@@ -107,7 +120,6 @@ function fillSelect(el, values, placeholder) {
   base.value = "";
   base.textContent = placeholder;
   el.appendChild(base);
-
   values.forEach(v => {
     const opt = document.createElement("option");
     opt.value = v;
@@ -186,7 +198,7 @@ function buildIndexes() {
     entriesByState.get(state).push(entry);
   }
 
-  for (const [state, list] of entriesByState.entries()) {
+  for (const [, list] of entriesByState.entries()) {
     list.sort((a, b) => {
       if (a.impactRank !== b.impactRank) return a.impactRank - b.impactRank;
       return new Date(b.publishedDate || 0) - new Date(a.publishedDate || 0);
@@ -198,7 +210,6 @@ function attachStateRiskToGeoJSON() {
   statesGeo.features.forEach((feature) => {
     const name = normalizeStateName(feature.properties?.NAME || feature.properties?.name || "");
     const state = stateIndex.get(name);
-
     feature.properties.calculatedRiskLevel = state?.calculatedRiskLevel || "No Data";
     feature.properties.riskScoreTotal = state?.riskScoreTotal ?? 0;
     feature.properties.entryCount = state?.entryCount ?? 0;
@@ -207,7 +218,6 @@ function attachStateRiskToGeoJSON() {
 
 function fillFilters() {
   const allEntries = [...entriesByState.values()].flat();
-
   fillSelect(ui.filterIso, uniqueSorted([...isoToStates.keys()]), "All ISO / RTO");
   fillSelect(ui.filterCategory, uniqueSorted(allEntries.map(e => e.category)), "All Categories");
   fillSelect(ui.filterImpact, uniqueSorted(allEntries.map(e => e.impactLevel)), "All Impact");
@@ -233,19 +243,16 @@ function entryMatchesFilters(entry, filters) {
     const blob = `${entry.title} ${entry.summary} ${entry.state}`.toLowerCase();
     if (!blob.includes(filters.search)) return false;
   }
-
   if (filters.iso) {
     const state = stateIndex.get(entry.state);
     const gridRegions = state?.gridRegions || [];
     if (!gridRegions.includes(filters.iso)) return false;
   }
-
   if (filters.category && entry.category !== filters.category) return false;
   if (filters.impact && entry.impactLevel !== filters.impact) return false;
   if (filters.type && entry.signalType !== filters.type) return false;
   if (filters.direction && entry.signalDirection !== filters.direction) return false;
   if (filters.signalCategory && entry.signalCategory !== filters.signalCategory) return false;
-
   return true;
 }
 
@@ -255,7 +262,6 @@ function renderTopSignals(items) {
     ui.panelTopSignals.innerHTML = "<li>No top signals available.</li>";
     return;
   }
-
   items.forEach(item => {
     const li = document.createElement("li");
     li.textContent = item;
@@ -265,26 +271,16 @@ function renderTopSignals(items) {
 
 function renderEntries(entries) {
   ui.panelEntries.innerHTML = "";
-
   if (!entries.length) {
     ui.panelEntriesHint.textContent = "No matching resources.";
     ui.panelEntries.innerHTML = "<li>No matching entries for the current filters.</li>";
     return;
   }
-
   ui.panelEntriesHint.textContent = `${entries.length} matching resource${entries.length === 1 ? "" : "s"}`;
-
   entries.forEach(entry => {
     const li = document.createElement("li");
-
     const year = entry.publishedDate ? new Date(entry.publishedDate).getFullYear() : "";
-    const meta = [
-      entry.category,
-      entry.impactLevel,
-      year || "",
-      entry.sourceDomain || ""
-    ].filter(Boolean).join(" • ");
-
+    const meta = [entry.category, entry.impactLevel, year || "", entry.sourceDomain || ""].filter(Boolean).join(" · ");
     li.innerHTML = `
       <div class="entry__title">
         <a href="${entry.link}" target="_blank" rel="noopener noreferrer">${entry.title}</a>
@@ -292,7 +288,6 @@ function renderEntries(entries) {
       <div class="entry__meta">${meta}</div>
       <div class="entry__summary">${entry.summary || ""}</div>
     `;
-
     ui.panelEntries.appendChild(li);
   });
 }
@@ -303,6 +298,20 @@ function showPanel() {
 
 function hidePanel() {
   ui.panel.classList.add("panel--hidden");
+  if (selectedStateId !== null && map.getSource("states")) {
+    map.setFeatureState({ source: "states", id: selectedStateId }, { selected: false });
+    selectedStateId = null;
+  }
+}
+
+function getRiskBadgeClass(riskLevel) {
+  const map = {
+    "High Risk": "risk-badge--high",
+    "Moderate Risk": "risk-badge--moderate",
+    "Emerging Risk": "risk-badge--emerging",
+    "Low Risk": "risk-badge--low",
+  };
+  return map[riskLevel] || "";
 }
 
 function renderStatePanel(stateName) {
@@ -312,12 +321,23 @@ function renderStatePanel(stateName) {
   currentContext = { type: "state", value: stateName };
 
   ui.panelTitle.textContent = stateName;
-  ui.panelMeta.textContent = [
-    state.calculatedRiskLevel ? `Risk: ${state.calculatedRiskLevel}` : "",
+
+  const riskBadge = state.calculatedRiskLevel
+    ? `<span class="risk-badge ${getRiskBadgeClass(state.calculatedRiskLevel)}">${state.calculatedRiskLevel}</span>`
+    : "";
+
+  ui.panelMeta.innerHTML = [
+    riskBadge,
     Number.isFinite(state.riskScoreTotal) ? `Score: ${state.riskScoreTotal}` : "",
-    Number.isFinite(state.entryCount) ? `Entries: ${state.entryCount}` : "",
+    Number.isFinite(state.entryCount) ? `${state.entryCount} signals` : "",
     (state.gridRegions || []).length ? `ISO/RTO: ${state.gridRegions.join(", ")}` : ""
-  ].filter(Boolean).join(" • ");
+  ].filter(Boolean).join(" · ");
+
+  if (ui.panelRiskContext) {
+    const context = RISK_CONTEXT[state.calculatedRiskLevel] || "";
+    ui.panelRiskContext.textContent = context;
+    ui.panelRiskContext.style.display = context ? "block" : "none";
+  }
 
   renderTopSignals(state.topRiskSignals || []);
 
@@ -326,6 +346,19 @@ function renderStatePanel(stateName) {
   renderEntries(entries);
 
   showPanel();
+
+  if (map && map.getSource("states")) {
+    if (selectedStateId !== null) {
+      map.setFeatureState({ source: "states", id: selectedStateId }, { selected: false });
+    }
+    const feature = statesGeo.features.find(f =>
+      normalizeStateName(f.properties?.NAME || f.properties?.name || "") === stateName
+    );
+    if (feature && feature.id !== undefined) {
+      selectedStateId = feature.id;
+      map.setFeatureState({ source: "states", id: selectedStateId }, { selected: true });
+    }
+  }
 }
 
 function renderIsoPanel(isoName) {
@@ -343,7 +376,11 @@ function renderIsoPanel(isoName) {
     .slice(0, 8);
 
   ui.panelTitle.textContent = isoName;
-  ui.panelMeta.textContent = `${stateNames.length} states • ${allEntries.length} resources`;
+  ui.panelMeta.innerHTML = `${stateNames.length} states · ${allEntries.length} signals`;
+
+  if (ui.panelRiskContext) {
+    ui.panelRiskContext.style.display = "none";
+  }
 
   renderTopSignals(topSignals);
   renderEntries(allEntries);
@@ -365,15 +402,34 @@ function safeSetFeatureState(source, id, state) {
 function setLayerVisibility() {
   const showStates = currentViewMode === "state";
   const showIso = currentViewMode === "iso";
-
   if (map.getLayer("states-fill")) map.setLayoutProperty("states-fill", "visibility", showStates ? "visible" : "none");
   if (map.getLayer("states-outline")) map.setLayoutProperty("states-outline", "visibility", showStates ? "visible" : "none");
+  if (map.getLayer("states-selected")) map.setLayoutProperty("states-selected", "visibility", showStates ? "visible" : "none");
   if (map.getLayer("iso-fill")) map.setLayoutProperty("iso-fill", "visibility", showIso ? "visible" : "none");
   if (map.getLayer("iso-line")) map.setLayoutProperty("iso-line", "visibility", showIso ? "visible" : "none");
 }
 
+function renderLastUpdated() {
+  if (!ui.legendLastUpdated) return;
+  const dates = [...stateIndex.values()]
+    .map(s => s.lastUpdated)
+    .filter(Boolean)
+    .map(d => new Date(d))
+    .filter(d => !isNaN(d));
+  if (!dates.length) return;
+  const latest = new Date(Math.max(...dates));
+  const formatted = latest.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  ui.legendLastUpdated.textContent = `Last updated: ${formatted}`;
+}
+
 function bindUI() {
   ui.panelClose.addEventListener("click", hidePanel);
+
+  if (ui.onboardingClose) {
+    ui.onboardingClose.addEventListener("click", () => {
+      ui.onboardingBanner.style.display = "none";
+    });
+  }
 
   ui.viewStateBtn.addEventListener("click", () => {
     currentViewMode = "state";
@@ -404,10 +460,8 @@ function bindUI() {
 
   ui.stateSearch?.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
-
     const query = ui.stateSearch.value.trim().toLowerCase();
     if (!query) return;
-
     if (currentViewMode === "state") {
       const match = [...stateIndex.keys()].find(name => name.toLowerCase().includes(query));
       if (match) renderStatePanel(match);
@@ -462,14 +516,14 @@ function initMap() {
           "match",
           ["get", "calculatedRiskLevel"],
           "Low Risk", "#A8D5BA",
-          "Emerging Risk", "#F3E6A3",
+          "Emerging Risk", "#F3E6AE",
           "Moderate Risk", "#F7C6C7",
           "High Risk", "#E57373",
           "#E5E7EB"
         ],
         "fill-opacity": [
           "case",
-          ["boolean", ["feature-state", "hover"], false], 0.85,
+          ["boolean", ["feature-state", "hover"], false], 0.9,
           0.72
         ]
       }
@@ -482,6 +536,20 @@ function initMap() {
       paint: {
         "line-color": "#6B7280",
         "line-width": 1
+      }
+    });
+
+    map.addLayer({
+      id: "states-selected",
+      type: "line",
+      source: "states",
+      paint: {
+        "line-color": "#1A56DB",
+        "line-width": [
+          "case",
+          ["boolean", ["feature-state", "selected"], false], 2.5,
+          0
+        ]
       }
     });
 
@@ -506,10 +574,10 @@ function initMap() {
         ],
         "fill-opacity": [
           "case",
-          ["boolean", ["feature-state", "hover"], false], 0.26,
+          ["boolean", ["feature-state", "hover"], false], 0.30,
           0.16
-  ]
-}
+        ]
+      }
     });
 
     map.addLayer({
@@ -531,7 +599,6 @@ function initMap() {
       if (hoveredStateId !== null && hoveredStateId !== feature.id) {
         safeSetFeatureState("states", hoveredStateId, { hover: false });
       }
-
       hoveredStateId = feature.id;
       safeSetFeatureState("states", hoveredStateId, { hover: true });
 
@@ -541,13 +608,11 @@ function initMap() {
       showHoverTooltip(
         e.point.x,
         e.point.y,
-        `
-          <strong>${stateName}</strong><br>
-          Risk: ${state?.calculatedRiskLevel || "No Data"}<br>
-          Score: ${state?.riskScoreTotal ?? 0}<br>
-          Entries: ${state?.entryCount ?? 0}<br>
-          ISO/RTO: ${(state?.gridRegions || []).join(", ") || "—"}
-        `
+        `<strong>${stateName}</strong><br>
+         Risk: ${state?.calculatedRiskLevel || "No Data"}<br>
+         Score: ${state?.riskScoreTotal ?? 0}<br>
+         Signals: ${state?.entryCount ?? 0}<br>
+         ISO/RTO: ${(state?.gridRegions || []).join(", ") || "—"}`
       );
     });
 
@@ -573,14 +638,12 @@ function initMap() {
       if (hoveredIsoId !== null && hoveredIsoId !== feature.id) {
         safeSetFeatureState("iso", hoveredIsoId, { hover: false });
       }
-
       hoveredIsoId = feature.id;
       safeSetFeatureState("iso", hoveredIsoId, { hover: true });
 
       const isoName = String(feature.properties?.iso || "").trim();
       const stateNames = isoToStates.get(isoName) || [];
       const filters = getFilters();
-
       const entryCount = stateNames
         .flatMap(state => entriesByState.get(state) || [])
         .filter(entry => entryMatchesFilters(entry, filters))
@@ -589,11 +652,7 @@ function initMap() {
       showHoverTooltip(
         e.point.x,
         e.point.y,
-        `
-          <strong>${isoName}</strong><br>
-          States: ${stateNames.length}<br>
-          Resources: ${entryCount}
-        `
+        `<strong>${isoName}</strong><br>States: ${stateNames.length}<br>Signals: ${entryCount}`
       );
     });
 
@@ -616,6 +675,28 @@ function initMap() {
   });
 }
 
+function renderTopRiskStates() {
+  if (!ui.topRiskList) return;
+  ui.topRiskList.innerHTML = "";
+
+  const ranked = [...stateIndex.values()]
+    .filter(state => Number.isFinite(state.riskScoreTotal))
+    .sort((a, b) => a.riskScoreTotal - b.riskScoreTotal)
+    .slice(0, 5);
+
+  ranked.forEach(state => {
+    const li = document.createElement("li");
+    const link = document.createElement("a");
+    link.href = "#";
+    link.textContent = `${state.state} (${state.riskScoreTotal})`;
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      renderStatePanel(state.state);
+    });
+    li.appendChild(link);
+    ui.topRiskList.appendChild(li);
+  });
+}
 
 async function main() {
   try {
@@ -636,40 +717,13 @@ async function main() {
     fillFilters();
     bindUI();
     renderTopRiskStates();
+    renderLastUpdated();
     initMap();
-     
+
   } catch (err) {
     console.error(err);
     alert(`Map failed to load: ${err.message}`);
   }
-}
-
-function renderTopRiskStates() {
-  if (!ui.topRiskList) return;
-
-  ui.topRiskList.innerHTML = "";
-
-  const ranked = [...stateIndex.values()]
-    .filter(state => Number.isFinite(state.riskScoreTotal))
-    .sort((a, b) => a.riskScoreTotal - b.riskScoreTotal)
-    .slice(0, 5);
-
-  ranked.forEach(state => {
-    const li = document.createElement("li");
-
-    const link = document.createElement("a");
-    link.href = "#";
-    link.textContent = `${state.state} (${state.riskScoreTotal})`;
-    link.style.fontWeight = "600";
-
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      renderStatePanel(state.state);
-    });
-
-    li.appendChild(link);
-    ui.topRiskList.appendChild(li);
-  });
 }
 
 main();
