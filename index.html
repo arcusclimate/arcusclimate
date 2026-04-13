@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Arcus Climate Map</title>
+  <title>Arcus Climate — AI Infrastructure Risk Intelligence</title>
 
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
@@ -11,10 +11,19 @@
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
+
   <div class="topbar">
     <div class="brand">
-      <div class="brand__title">Arcus Climate</div>
-      <div class="brand__subtitle">Data center siting signals</div>
+      <div class="brand__logo">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M4 22 Q14 4 24 22" stroke="#3B8FE8" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+          <path d="M8 22 Q14 10 20 22" stroke="#3B8FE8" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.6"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand__title">Arcus Climate</div>
+        <div class="brand__subtitle">AI infrastructure risk intelligence</div>
+      </div>
     </div>
 
     <div class="toolbar">
@@ -41,16 +50,25 @@
         <option value="">All Signal Types</option>
       </select>
 
-      <select id="filterDirection" class="toolbar__select">
-        <option value="">All Directions</option>
-      </select>
+      <div class="toolbar__row2">
+        <select id="filterDirection" class="toolbar__select">
+          <option value="">All Directions</option>
+        </select>
 
-      <select id="filterSignalCategory" class="toolbar__select">
-        <option value="">All Signal Categories</option>
-      </select>
+        <select id="filterSignalCategory" class="toolbar__select">
+          <option value="">All Signal Categories</option>
+        </select>
 
-      <button id="clearFiltersBtn" class="toolbar__btn">Clear</button>
+        <button id="clearFiltersBtn" class="toolbar__btn">Clear</button>
+
+        <a href="mailto:info@arcusclimate.co" class="toolbar__cta">Talk to us</a>
+      </div>
     </div>
+  </div>
+
+  <div id="onboardingBanner" class="onboarding-banner">
+    <span class="onboarding-banner__text">This map tracks regulatory, grid, and policy signals that determine where AI infrastructure can scale — and where it can't.</span>
+    <button id="onboardingClose" class="onboarding-banner__close" aria-label="Dismiss">×</button>
   </div>
 
   <div id="map"></div>
@@ -64,6 +82,8 @@
       </div>
       <button id="panelClose" class="panel__close" aria-label="Close">×</button>
     </div>
+
+    <div id="panelRiskContext" class="panel__risk-context"></div>
 
     <div class="panel__section">
       <div class="panel__sectionTitle">Top Risk Signals</div>
@@ -100,7 +120,7 @@
       <span class="legend__swatch" style="background:#F7C6C7;"></span>
       <div>
         <div class="legend__label">Moderate Risk</div>
-        <div class="legend__range">Score: -17 to 6</div>
+        <div class="legend__range">Score: -17 to -6</div>
       </div>
     </div>
 
@@ -115,17 +135,23 @@
     <div class="legend__divider"></div>
 
     <div class="legend__note">
-      Scores reflect a weighted sum of signals related to grid capacity, policy and regulation, water constraints, and hyperscale development activity. States are classified into risk tiers based on their aggregate score.
+      Scores reflect a weighted sum of signals related to grid capacity, policy and regulation, water constraints, and hyperscale development activity.
     </div>
+
+    <div class="legend__updated" id="legendLastUpdated"></div>
   </div>
 
   <div id="topRiskPanel" class="mini-panel">
     <div class="mini-panel__title">Top 5 Highest-Risk States</div>
     <ol id="topRiskList" class="mini-panel__list"></ol>
   </div>
-  
+
+  <div class="map-footer">
+    <span>Powered by <strong>Arcus Climate</strong> · <a href="mailto:info@arcusclimate.co">info@arcusclimate.co</a></span>
+  </div>
+
   <script>
-    window.MAPBOX_TOKEN = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg";
+    window.MAPBOX_TOKEN = window.__env?.MAPBOX_TOKEN || "";
   </script>
   <script src="./script.js"></script>
 </body>
