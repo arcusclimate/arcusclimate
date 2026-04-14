@@ -4,7 +4,7 @@ const MAPBOX_TOKEN = (() => {
 })();
 
 <script>
-  window.MAPBOX_TOKEN = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg";
+  window.MAPBOX_TOKEN = pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg;
 </script>
 
 const ENABLE_HOVER_TOOLTIPS = true;
