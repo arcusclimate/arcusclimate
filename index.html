@@ -11,10 +11,11 @@
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-
   <div class="topbar">
     <div class="brand">
-      <div class="brand__logo"><img src="./logo.png" alt="Arcus Climate" class="brand__logo-img" /></div>
+      <div class="brand__logo">
+        <img src="./logo.png" alt="Arcus Climate" class="brand__logo-img" />
+      </div>
       <div>
         <div class="brand__title">Arcus Climate</div>
         <div class="brand__subtitle">AI infrastructure risk intelligence</div>
@@ -23,18 +24,32 @@
 
     <div class="toolbar">
       <div class="toggle">
-        <button id="viewStateBtn" class="toggle__btn toggle__btn--active">States</button>
-        <button id="viewIsoBtn" class="toggle__btn">ISO / RTO</button>
+        <button id="viewStateBtn" class="toggle__btn toggle__btn--active" type="button">States</button>
+        <button id="viewIsoBtn" class="toggle__btn" type="button">ISO / RTO</button>
       </div>
+
       <input id="stateSearch" class="toolbar__input" type="text" placeholder="Search..." />
-      <select id="filterIso" class="toolbar__select toolbar__select--iso"><option value="">Filter by Grid Region</option></select>
-      <select id="filterCategory" class="toolbar__select"><option value="">All Categories</option></select>
-      <select id="filterImpact" class="toolbar__select"><option value="">All Impact</option></select>
-      <select id="filterDirection" class="toolbar__select"><option value="">All Directions</option></select>
-      <button id="clearFiltersBtn" class="toolbar__btn">Clear</button>
-      <button id="methodologyBtn" class="toolbar__btn toolbar__btn--method" title="Scoring methodology">?</button>
+      <select id="filterIso" class="toolbar__select toolbar__select--iso">
+        <option value="">All Grid Regions</option>
+      </select>
+      <select id="filterCategory" class="toolbar__select">
+        <option value="">All Categories</option>
+      </select>
+      <select id="filterImpact" class="toolbar__select">
+        <option value="">All Impact</option>
+      </select>
+      <select id="filterDirection" class="toolbar__select">
+        <option value="">All Directions</option>
+      </select>
+      <button id="clearFiltersBtn" class="toolbar__btn" type="button">Clear</button>
+      <button id="methodologyBtn" class="toolbar__btn toolbar__btn--method" type="button" title="Scoring methodology">?</button>
     </div>
   </div>
+
+  <div
+    id="appStatus"
+    style="display:none;position:fixed;top:84px;left:14px;z-index:300;max-width:520px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;padding:10px 12px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);font:12px/1.4 Inter,system-ui,sans-serif;"
+  ></div>
 
   <div id="methodologyPanel" class="methodology-panel methodology-panel--hidden" role="dialog" aria-label="Scoring methodology">
     <div class="methodology-panel__inner">
@@ -43,30 +58,57 @@
           <span class="methodology-panel__badge">Beta</span>
           <span class="methodology-panel__title">Scoring Methodology</span>
         </div>
-        <button id="methodologyClose" class="methodology-panel__close" aria-label="Close">×</button>
+        <button id="methodologyClose" class="methodology-panel__close" aria-label="Close" type="button">×</button>
       </div>
-      <p class="methodology-panel__intro">Each signal is scored across five dimensions. State scores are the sum of all entry scores. Risk tiers are assigned based on that total.</p>
+
+      <p class="methodology-panel__intro">
+        Each signal is scored across five dimensions. State scores are the sum of all entry scores. Risk tiers are assigned based on that total.
+      </p>
+
       <div class="methodology-panel__dims">
-        <div class="methodology-panel__dim"><div class="methodology-panel__dim-name">Grid <span class="methodology-panel__dim-range">−10 to +10</span></div><div class="methodology-panel__dim-desc">Capacity, reliability, and interconnection</div></div>
-        <div class="methodology-panel__dim"><div class="methodology-panel__dim-name">Regulatory <span class="methodology-panel__dim-range">−10 to +10</span></div><div class="methodology-panel__dim-desc">Policy, permitting, tariffs, zoning, incentives</div></div>
-        <div class="methodology-panel__dim"><div class="methodology-panel__dim-name">Water <span class="methodology-panel__dim-range">−10 to 0</span></div><div class="methodology-panel__dim-desc">Scarcity, restrictions, community opposition</div></div>
-        <div class="methodology-panel__dim"><div class="methodology-panel__dim-name">Clean Energy <span class="methodology-panel__dim-range">−5 to +5</span></div><div class="methodology-panel__dim-desc">Renewable access, PPA market, RPS strength</div></div>
-        <div class="methodology-panel__dim"><div class="methodology-panel__dim-name">Saturation <span class="methodology-panel__dim-range">−5 to +5</span></div><div class="methodology-panel__dim-desc">Development pressure and cost socialization</div></div>
+        <div class="methodology-panel__dim">
+          <div class="methodology-panel__dim-name">Grid <span class="methodology-panel__dim-range">-10 to +10</span></div>
+          <div class="methodology-panel__dim-desc">Capacity, reliability, and interconnection</div>
+        </div>
+        <div class="methodology-panel__dim">
+          <div class="methodology-panel__dim-name">Regulatory <span class="methodology-panel__dim-range">-10 to +10</span></div>
+          <div class="methodology-panel__dim-desc">Policy, permitting, tariffs, zoning, incentives</div>
+        </div>
+        <div class="methodology-panel__dim">
+          <div class="methodology-panel__dim-name">Water <span class="methodology-panel__dim-range">-10 to 0</span></div>
+          <div class="methodology-panel__dim-desc">Scarcity, restrictions, community opposition</div>
+        </div>
+        <div class="methodology-panel__dim">
+          <div class="methodology-panel__dim-name">Clean Energy <span class="methodology-panel__dim-range">-5 to +5</span></div>
+          <div class="methodology-panel__dim-desc">Renewable access, PPA market, RPS strength</div>
+        </div>
+        <div class="methodology-panel__dim">
+          <div class="methodology-panel__dim-name">Saturation <span class="methodology-panel__dim-range">-5 to +5</span></div>
+          <div class="methodology-panel__dim-desc">Development pressure and cost socialization</div>
+        </div>
       </div>
+
       <div class="methodology-panel__tiers">
         <div class="methodology-panel__tier-title">Risk Tiers</div>
-        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--low"></span><strong>Low Risk</strong>&nbsp; ≥ +5</div>
-        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--emerging"></span><strong>Emerging Risk</strong>&nbsp; −20 to +4</div>
-        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--moderate"></span><strong>Moderate Risk</strong>&nbsp; −70 to −21</div>
-        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--high"></span><strong>High Risk</strong>&nbsp; ≤ −71</div>
+        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--low"></span><strong>Low Risk</strong>&nbsp; >= +5</div>
+        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--emerging"></span><strong>Emerging Risk</strong>&nbsp; -20 to +4</div>
+        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--moderate"></span><strong>Moderate Risk</strong>&nbsp; -70 to -21</div>
+        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--high"></span><strong>High Risk</strong>&nbsp; <= -71</div>
       </div>
-      <p class="methodology-panel__footer">Methodology in active development. <a href="mailto:info@arcusclimate.co">Contact us</a> with feedback.</p>
+
+      <p class="methodology-panel__footer">
+        Methodology in active development.
+        <a href="mailto:info@arcusclimate.co">Contact us</a>
+        with feedback.
+      </p>
     </div>
   </div>
 
   <div id="onboardingBanner" class="onboarding-banner">
-    <span class="onboarding-banner__text">This map tracks regulatory, grid, and policy signals that determine where AI infrastructure can scale — and where it can't.</span>
-    <button id="onboardingClose" class="onboarding-banner__close" aria-label="Dismiss">×</button>
+    <span class="onboarding-banner__text">
+      This map tracks regulatory, grid, and policy signals that determine where AI infrastructure can scale — and where it cannot.
+    </span>
+    <button id="onboardingClose" class="onboarding-banner__close" aria-label="Dismiss" type="button">×</button>
   </div>
 
   <div id="map"></div>
@@ -78,7 +120,7 @@
         <div id="panelTitle" class="panel__title">Title</div>
         <div id="panelMeta" class="panel__meta"></div>
       </div>
-      <button id="panelClose" class="panel__close" aria-label="Close">×</button>
+      <button id="panelClose" class="panel__close" aria-label="Close" type="button">×</button>
     </div>
 
     <div id="panelRiskContext" class="panel__risk-context"></div>
@@ -102,7 +144,7 @@
       <span class="legend__swatch" style="background:#A8D5BA;"></span>
       <div>
         <div class="legend__label">Low Risk</div>
-        <div class="legend__range">Score: ≥ +5</div>
+        <div class="legend__range">Score: >= +5</div>
       </div>
     </div>
 
@@ -110,7 +152,7 @@
       <span class="legend__swatch" style="background:#F3E6AE;"></span>
       <div>
         <div class="legend__label">Emerging Risk</div>
-        <div class="legend__range">Score: −20 to +4</div>
+        <div class="legend__range">Score: -20 to +4</div>
       </div>
     </div>
 
@@ -118,7 +160,7 @@
       <span class="legend__swatch" style="background:#F7C6C7;"></span>
       <div>
         <div class="legend__label">Moderate Risk</div>
-        <div class="legend__range">Score: −70 to −21</div>
+        <div class="legend__range">Score: -70 to -21</div>
       </div>
     </div>
 
@@ -126,38 +168,41 @@
       <span class="legend__swatch" style="background:#E57373;"></span>
       <div>
         <div class="legend__label">High Risk</div>
-        <div class="legend__range">Score: ≤ −71</div>
+        <div class="legend__range">Score: <= -71</div>
       </div>
     </div>
 
-<div class="legend__divider"></div>
+    <div class="legend__divider"></div>
 
-<div class="legend__note">
-  Scores sum five dimensions: grid capacity, regulatory environment, water risk, clean energy access, and market saturation.
-</div>
+    <div class="legend__note">
+      Scores sum five dimensions: grid capacity, regulatory environment, water risk, clean energy access, and market saturation.
+    </div>
 
-<div class="legend__updated" id="legendLastUpdated"></div>
-</div>
+    <div class="legend__updated" id="legendLastUpdated"></div>
+  </div>
 
-<a href="https://arcusclimate.co/#contact" target="_blank" rel="noopener" class="floating-cta" aria-label="Get in touch with Arcus Climate">
-  Talk to us →
-</a>
+  <a
+    href="https://arcusclimate.co/#contact"
+    target="_blank"
+    rel="noopener"
+    class="floating-cta"
+    aria-label="Get in touch with Arcus Climate"
+  >
+    Talk to us →
+  </a>
 
-<div id="topRiskPanel" class="mini-panel">
-  <div class="mini-panel__title">Top 5 Highest-Risk States</div>
-  <ol id="topRiskList" class="mini-panel__list"></ol>
-</div>
+  <div id="topRiskPanel" class="mini-panel">
+    <div class="mini-panel__title">Top 5 Highest-Risk States</div>
+    <ol id="topRiskList" class="mini-panel__list"></ol>
+  </div>
 
-<div class="map-footer">
-  <span>
-    Powered by <strong>Arcus Climate</strong> ·
-    <a href="mailto:info@arcusclimate.co">info@arcusclimate.co</a>
-  </span>
-</div>
+  <div class="map-footer">
+    <span>
+      Powered by <strong>Arcus Climate</strong> ·
+      <a href="mailto:info@arcusclimate.co">info@arcusclimate.co</a>
+    </span>
+  </div>
 
-<script>
-  window.MAPBOX_TOKEN = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg ";
-</script>
-<script src="./script.js"></script>
+  <script src="./script.js"></script>
 </body>
 </html>
