@@ -1,32 +1,22 @@
-const MAPBOX_TOKEN = (() => {
-  if (typeof window === "undefined") return "";
-  return (window.__env?.MAPBOX_TOKEN || window.MAPBOX_TOKEN || "").trim();
-})();
+const MAPBOX_TOKEN = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg ";
 
-mapboxgl.accessToken = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg ";
-
-<script>
-  window.MAPBOX_TOKEN = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg";
-</script>
-
-const ENABLE_HOVER_TOOLTIPS = true;
-const ENABLE_ISO_PANEL = true;
+const DATA_URLS = {
+  statesGeo: "./data/us-states.geojson",
+  isoGeo: "./data/iso-rto.geojson",
+  statesApi: "./api/states",
+  entriesApi: "./api/entries",
+};
 
 const RISK_CONTEXT = {
-  "High Risk": "This state faces compounding constraints across grid capacity, regulatory environment, and community opposition that make new data center siting costly, slow, or politically uncertain. Score ≤ −71.",
-  "Moderate Risk": "This state has meaningful infrastructure or regulatory headwinds. Growth is possible but requires careful diligence on grid timelines, tariff exposure, and policy trajectory. Score −21 to −70.",
-  "Emerging Risk": "This state shows early warning signals. Current conditions are workable, but the risk profile is shifting as AI compute demand grows. Monitor grid, water, and legislative trends. Score −20 to +4.",
-  "Low Risk": "This state presents relatively favorable conditions for AI infrastructure siting, with supportive grid capacity, policy environment, and limited near-term constraint signals. Score ≥ +5.",
+  "High Risk": "This state faces compounding constraints across grid capacity, regulatory environment, and community opposition that make new data center siting costly, slow, or politically uncertain. Score <= -71.",
+  "Moderate Risk": "This state has meaningful infrastructure or regulatory headwinds. Growth is possible but requires careful diligence on grid timelines, tariff exposure, and policy trajectory. Score -21 to -70.",
+  "Emerging Risk": "This state shows early warning signals. Current conditions are workable, but the risk profile is shifting as AI compute demand grows. Monitor grid, water, and legislative trends. Score -20 to +4.",
+  "Low Risk": "This state presents relatively favorable conditions for AI infrastructure siting, with supportive grid capacity, policy environment, and limited near-term constraint signals. Score >= +5.",
   "No Data": ""
 };
 
-if (!MAPBOX_TOKEN) {
-  console.error("Mapbox token missing. Set MAPBOX_TOKEN as a Vercel environment variable.");
-} else {
-  mapboxgl.accessToken = MAPBOX_TOKEN;
-}
-
 const ui = {
+  appStatus: document.getElementById("appStatus"),
   panel: document.getElementById("panel"),
   panelClose: document.getElementById("panelClose"),
   panelTitle: document.getElementById("panelTitle"),
@@ -40,7 +30,6 @@ const ui = {
   legendLastUpdated: document.getElementById("legendLastUpdated"),
   onboardingBanner: document.getElementById("onboardingBanner"),
   onboardingClose: document.getElementById("onboardingClose"),
-
   stateSearch: document.getElementById("stateSearch"),
   filterIso: document.getElementById("filterIso"),
   filterCategory: document.getElementById("filterCategory"),
@@ -50,33 +39,13 @@ const ui = {
   methodologyBtn: document.getElementById("methodologyBtn"),
   methodologyPanel: document.getElementById("methodologyPanel"),
   methodologyClose: document.getElementById("methodologyClose"),
-
   viewStateBtn: document.getElementById("viewStateBtn"),
   viewIsoBtn: document.getElementById("viewIsoBtn"),
 };
 
-const RISK_COLORS = {
-  "Low Risk": "#A8D5BA",
-  "Emerging Risk": "#F3E6AE",
-  "Moderate Risk": "#F7C6C7",
-  "High Risk": "#E57373",
-  "No Data": "#E5E7EB",
-};
-
-const ISO_COLORS = {
-  "PJM": "#7FB3D5",
-  "MISO": "#A3BE8C",
-  "SPP": "#EBCB8B",
-  "ERCOT": "#D08770",
-  "CAISO": "#88C0D0",
-  "NYISO": "#B48EAD",
-  "ISO-NE": "#81A1C1",
-  "WECC": "#D8DEE9"
-};
-
-let map;
-let statesGeo;
-let isoGeo;
+let map = null;
+let statesGeo = { type: "FeatureCollection", features: [] };
+let isoGeo = { type: "FeatureCollection", features: [] };
 
 let statesData = [];
 let entriesData = [];
@@ -91,15 +60,41 @@ let hoveredStateId = null;
 let hoveredIsoId = null;
 let selectedStateId = null;
 
-async function fetchJson(url) {
-  const res = await fetch(url);
-  const text = await res.text();
+function showStatus(message, isError = false) {
+  if (!ui.appStatus) return;
+  ui.appStatus.textContent = message;
+  ui.appStatus.style.display = "block";
+  ui.appStatus.style.background = isError ? "#fff7ed" : "#eff6ff";
+  ui.appStatus.style.borderColor = isError ? "#fdba74" : "#93c5fd";
+  ui.appStatus.style.color = isError ? "#9a3412" : "#1d4ed8";
+}
+
+function clearStatus() {
+  if (!ui.appStatus) return;
+  ui.appStatus.style.display = "none";
+  ui.appStatus.textContent = "";
+}
+
+async function fetchJson(url, { optional = false, fallback = null } = {}) {
   try {
-    const json = JSON.parse(text);
-    if (!res.ok) throw new Error(json.error || `Request failed: ${url}`);
-    return json;
-  } catch {
-    throw new Error(`Non-JSON response from ${url}: ${text.slice(0, 120)}`);
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      throw new Error(`${res.status} ${res.statusText}`);
+    }
+
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("application/json") && !contentType.includes("geo+json")) {
+      const text = await res.text();
+      return JSON.parse(text);
+    }
+
+    return await res.json();
+  } catch (err) {
+    if (optional) {
+      console.warn(`Optional fetch failed for ${url}:`, err);
+      return fallback;
+    }
+    throw new Error(`Failed to load ${url}: ${err.message}`);
   }
 }
 
@@ -112,7 +107,7 @@ function parseTopSignals(value) {
   if (Array.isArray(value)) return value.filter(Boolean);
   return String(value)
     .split(",")
-    .map(v => v.trim())
+    .map((v) => v.trim())
     .filter(Boolean);
 }
 
@@ -127,7 +122,8 @@ function fillSelect(el, values, placeholder) {
   base.value = "";
   base.textContent = placeholder;
   el.appendChild(base);
-  values.forEach(v => {
+
+  values.forEach((v) => {
     const opt = document.createElement("option");
     opt.value = v;
     opt.textContent = v;
@@ -165,7 +161,7 @@ function buildIndexes() {
 
     const rec = {
       state: name,
-      calculatedRiskLevel: s.calculatedRiskLevel || s["Calculated Risk Level"] || "",
+      calculatedRiskLevel: s.calculatedRiskLevel || s["Calculated Risk Level"] || "No Data",
       riskScoreTotal: Number(s.riskScoreTotal ?? s["Risk Score Total"] ?? 0),
       entryCount: Number(s.entryCount ?? s["Entry Count"] ?? 0),
       topRiskSignals: parseTopSignals(s.topRiskSignals ?? s["Top Risk Signals"]),
@@ -176,7 +172,7 @@ function buildIndexes() {
 
     stateIndex.set(name, rec);
 
-    gridRegions.forEach(iso => {
+    gridRegions.forEach((iso) => {
       if (!isoToStates.has(iso)) isoToStates.set(iso, []);
       isoToStates.get(iso).push(name);
     });
@@ -194,9 +190,7 @@ function buildIndexes() {
       state,
       category: e.category || e["Category (linked)"] || e.Category || "",
       impactLevel: e.impactLevel || e["Impact Level (linked)"] || e["Impact Level"] || "",
-      signalType: e.signalType || e["Signal Type (linked)"] || e["Signal Type"] || "",
       signalDirection: e.signalDirection || e["Signal Direction (linked)"] || e["Signal Direction"] || "",
-      signalCategory: e.signalCategory || e["Signal Category"] || "",
       impactRank: Number(e.impactRank ?? e["Impact Rank"] ?? 999),
       sourceDomain: e.sourceDomain || e["Source Domain"] || "",
     };
@@ -214,9 +208,13 @@ function buildIndexes() {
 }
 
 function attachStateRiskToGeoJSON() {
+  if (!statesGeo?.features?.length) return;
+
   statesGeo.features.forEach((feature) => {
     const name = normalizeStateName(feature.properties?.NAME || feature.properties?.name || "");
     const state = stateIndex.get(name);
+
+    feature.properties = feature.properties || {};
     feature.properties.calculatedRiskLevel = state?.calculatedRiskLevel || "No Data";
     feature.properties.riskScoreTotal = state?.riskScoreTotal ?? 0;
     feature.properties.entryCount = state?.entryCount ?? 0;
@@ -226,11 +224,11 @@ function attachStateRiskToGeoJSON() {
 function fillFilters() {
   const allEntries = [...entriesByState.values()].flat();
 
-  // ISO/RTO filter — show name + state count for clarity
   if (ui.filterIso) {
     ui.filterIso.innerHTML = '<option value="">All Grid Regions</option>';
     const isoList = uniqueSorted([...isoToStates.keys()]);
-    isoList.forEach(iso => {
+
+    isoList.forEach((iso) => {
       const stateCount = (isoToStates.get(iso) || []).length;
       const opt = document.createElement("option");
       opt.value = iso;
@@ -239,9 +237,9 @@ function fillFilters() {
     });
   }
 
-  fillSelect(ui.filterCategory, uniqueSorted(allEntries.map(e => e.category)), "All Categories");
-  fillSelect(ui.filterImpact, uniqueSorted(allEntries.map(e => e.impactLevel)), "All Impact");
-  fillSelect(ui.filterDirection, uniqueSorted(allEntries.map(e => e.signalDirection)), "All Directions");
+  fillSelect(ui.filterCategory, uniqueSorted(allEntries.map((e) => e.category)), "All Categories");
+  fillSelect(ui.filterImpact, uniqueSorted(allEntries.map((e) => e.impactLevel)), "All Impact");
+  fillSelect(ui.filterDirection, uniqueSorted(allEntries.map((e) => e.signalDirection)), "All Directions");
 }
 
 function getFilters() {
@@ -259,24 +257,30 @@ function entryMatchesFilters(entry, filters) {
     const blob = `${entry.title} ${entry.summary} ${entry.state}`.toLowerCase();
     if (!blob.includes(filters.search)) return false;
   }
+
   if (filters.iso) {
     const state = stateIndex.get(entry.state);
     const gridRegions = state?.gridRegions || [];
     if (!gridRegions.includes(filters.iso)) return false;
   }
+
   if (filters.category && entry.category !== filters.category) return false;
   if (filters.impact && entry.impactLevel !== filters.impact) return false;
   if (filters.direction && entry.signalDirection !== filters.direction) return false;
+
   return true;
 }
 
 function renderTopSignals(items) {
+  if (!ui.panelTopSignals) return;
   ui.panelTopSignals.innerHTML = "";
+
   if (!items.length) {
     ui.panelTopSignals.innerHTML = "<li>No top signals available.</li>";
     return;
   }
-  items.forEach(item => {
+
+  items.forEach((item) => {
     const li = document.createElement("li");
     li.textContent = item;
     ui.panelTopSignals.appendChild(li);
@@ -284,48 +288,59 @@ function renderTopSignals(items) {
 }
 
 function renderEntries(entries) {
+  if (!ui.panelEntries || !ui.panelEntriesHint) return;
+
   ui.panelEntries.innerHTML = "";
+
   if (!entries.length) {
     ui.panelEntriesHint.textContent = "No matching resources.";
     ui.panelEntries.innerHTML = "<li>No matching entries for the current filters.</li>";
     return;
   }
+
   ui.panelEntriesHint.textContent = `${entries.length} matching resource${entries.length === 1 ? "" : "s"}`;
-  entries.forEach(entry => {
+
+  entries.forEach((entry) => {
     const li = document.createElement("li");
     const year = entry.publishedDate ? new Date(entry.publishedDate).getFullYear() : "";
-    const meta = [entry.category, entry.impactLevel, year || "", entry.sourceDomain || ""].filter(Boolean).join(" · ");
+    const meta = [entry.category, entry.impactLevel, year || "", entry.sourceDomain || ""]
+      .filter(Boolean)
+      .join(" · ");
+
     li.innerHTML = `
       <div class="entry__title">
-        <a href="${entry.link}" target="_blank" rel="noopener noreferrer">${entry.title}</a>
+        <a href="${entry.link || "#"}" target="_blank" rel="noopener noreferrer">${entry.title || "Untitled resource"}</a>
       </div>
       <div class="entry__meta">${meta}</div>
       <div class="entry__summary">${entry.summary || ""}</div>
     `;
+
     ui.panelEntries.appendChild(li);
   });
 }
 
 function showPanel() {
-  ui.panel.classList.remove("panel--hidden");
+  if (ui.panel) ui.panel.classList.remove("panel--hidden");
 }
 
 function hidePanel() {
-  ui.panel.classList.add("panel--hidden");
-  if (selectedStateId !== null && map.getSource("states")) {
+  if (ui.panel) ui.panel.classList.add("panel--hidden");
+
+  if (map && selectedStateId !== null && map.getSource("states")) {
     map.setFeatureState({ source: "states", id: selectedStateId }, { selected: false });
-    selectedStateId = null;
   }
+
+  selectedStateId = null;
 }
 
 function getRiskBadgeClass(riskLevel) {
-  const map = {
+  const classes = {
     "High Risk": "risk-badge--high",
     "Moderate Risk": "risk-badge--moderate",
     "Emerging Risk": "risk-badge--emerging",
     "Low Risk": "risk-badge--low",
   };
-  return map[riskLevel] || "";
+  return classes[riskLevel] || "";
 }
 
 function renderStatePanel(stateName) {
@@ -334,18 +349,20 @@ function renderStatePanel(stateName) {
 
   currentContext = { type: "state", value: stateName };
 
-  ui.panelTitle.textContent = stateName;
+  if (ui.panelTitle) ui.panelTitle.textContent = stateName;
 
   const riskBadge = state.calculatedRiskLevel
     ? `<span class="risk-badge ${getRiskBadgeClass(state.calculatedRiskLevel)}">${state.calculatedRiskLevel}</span>`
     : "";
 
-  ui.panelMeta.innerHTML = [
-    riskBadge,
-    Number.isFinite(state.riskScoreTotal) ? `Risk score: ${state.riskScoreTotal}` : "",
-    Number.isFinite(state.entryCount) ? `${state.entryCount} signals` : "",
-    (state.gridRegions || []).length ? `ISO/RTO: ${state.gridRegions.join(", ")}` : ""
-  ].filter(Boolean).join(" · ");
+  if (ui.panelMeta) {
+    ui.panelMeta.innerHTML = [
+      riskBadge,
+      Number.isFinite(state.riskScoreTotal) ? `Risk score: ${state.riskScoreTotal}` : "",
+      Number.isFinite(state.entryCount) ? `${state.entryCount} signals` : "",
+      (state.gridRegions || []).length ? `ISO/RTO: ${state.gridRegions.join(", ")}` : ""
+    ].filter(Boolean).join(" · ");
+  }
 
   if (ui.panelRiskContext) {
     const context = RISK_CONTEXT[state.calculatedRiskLevel] || "";
@@ -356,18 +373,19 @@ function renderStatePanel(stateName) {
   renderTopSignals(state.topRiskSignals || []);
 
   const filters = getFilters();
-  const entries = (entriesByState.get(stateName) || []).filter(e => entryMatchesFilters(e, filters));
+  const entries = (entriesByState.get(stateName) || []).filter((e) => entryMatchesFilters(e, filters));
   renderEntries(entries);
-
   showPanel();
 
   if (map && map.getSource("states")) {
     if (selectedStateId !== null) {
       map.setFeatureState({ source: "states", id: selectedStateId }, { selected: false });
     }
-    const feature = statesGeo.features.find(f =>
-      normalizeStateName(f.properties?.NAME || f.properties?.name || "") === stateName
+
+    const feature = statesGeo.features.find(
+      (f) => normalizeStateName(f.properties?.NAME || f.properties?.name || "") === stateName
     );
+
     if (feature && feature.id !== undefined) {
       selectedStateId = feature.id;
       map.setFeatureState({ source: "states", id: selectedStateId }, { selected: true });
@@ -382,15 +400,15 @@ function renderIsoPanel(isoName) {
   const filters = getFilters();
 
   const allEntries = stateNames
-    .flatMap(state => entriesByState.get(state) || [])
-    .filter(e => entryMatchesFilters(e, filters));
+    .flatMap((state) => entriesByState.get(state) || [])
+    .filter((e) => entryMatchesFilters(e, filters));
 
   const topSignals = stateNames
-    .flatMap(state => stateIndex.get(state)?.topRiskSignals || [])
+    .flatMap((state) => stateIndex.get(state)?.topRiskSignals || [])
     .slice(0, 8);
 
-  ui.panelTitle.textContent = isoName;
-  ui.panelMeta.innerHTML = `${stateNames.length} states · ${allEntries.length} signals`;
+  if (ui.panelTitle) ui.panelTitle.textContent = isoName;
+  if (ui.panelMeta) ui.panelMeta.innerHTML = `${stateNames.length} states · ${allEntries.length} signals`;
 
   if (ui.panelRiskContext) {
     ui.panelRiskContext.style.display = "none";
@@ -414,8 +432,11 @@ function safeSetFeatureState(source, id, state) {
 }
 
 function setLayerVisibility() {
+  if (!map) return;
+
   const showStates = currentViewMode === "state";
   const showIso = currentViewMode === "iso";
+
   if (map.getLayer("states-fill")) map.setLayoutProperty("states-fill", "visibility", showStates ? "visible" : "none");
   if (map.getLayer("states-outline")) map.setLayoutProperty("states-outline", "visibility", showStates ? "visible" : "none");
   if (map.getLayer("states-selected")) map.setLayoutProperty("states-selected", "visibility", showStates ? "visible" : "none");
@@ -425,87 +446,99 @@ function setLayerVisibility() {
 
 function renderLastUpdated() {
   if (!ui.legendLastUpdated) return;
+
   const dates = [...stateIndex.values()]
-    .map(s => s.lastUpdated)
+    .map((s) => s.lastUpdated)
     .filter(Boolean)
-    .map(d => new Date(d))
-    .filter(d => !isNaN(d));
-  if (!dates.length) return;
+    .map((d) => new Date(d))
+    .filter((d) => !isNaN(d));
+
+  if (!dates.length) {
+    ui.legendLastUpdated.textContent = "";
+    return;
+  }
+
   const latest = new Date(Math.max(...dates));
-  const formatted = latest.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  ui.legendLastUpdated.textContent = `Last updated: ${formatted}`;
+  ui.legendLastUpdated.textContent = `Last updated: ${latest.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })}`;
 }
 
 function bindUI() {
-  ui.panelClose.addEventListener("click", hidePanel);
+  ui.panelClose?.addEventListener("click", hidePanel);
 
-  if (ui.onboardingClose) {
-    ui.onboardingClose.addEventListener("click", () => {
-      ui.onboardingBanner.style.display = "none";
-    });
-  }
+  ui.onboardingClose?.addEventListener("click", () => {
+    if (ui.onboardingBanner) ui.onboardingBanner.style.display = "none";
+  });
 
-  ui.viewStateBtn.addEventListener("click", () => {
+  ui.viewStateBtn?.addEventListener("click", () => {
     currentViewMode = "state";
-    ui.viewStateBtn.classList.add("toggle__btn--active");
-    ui.viewIsoBtn.classList.remove("toggle__btn--active");
+    ui.viewStateBtn?.classList.add("toggle__btn--active");
+    ui.viewIsoBtn?.classList.remove("toggle__btn--active");
     setLayerVisibility();
     hideHoverTooltip();
   });
 
-  ui.viewIsoBtn.addEventListener("click", () => {
+  ui.viewIsoBtn?.addEventListener("click", () => {
     currentViewMode = "iso";
-    ui.viewIsoBtn.classList.add("toggle__btn--active");
-    ui.viewStateBtn.classList.remove("toggle__btn--active");
+    ui.viewIsoBtn?.classList.add("toggle__btn--active");
+    ui.viewStateBtn?.classList.remove("toggle__btn--active");
     setLayerVisibility();
     hideHoverTooltip();
   });
 
-  [
-    ui.filterIso,
-    ui.filterCategory,
-    ui.filterImpact,
-    ui.filterDirection,
-  ].forEach(el => {
+  [ui.filterIso, ui.filterCategory, ui.filterImpact, ui.filterDirection].forEach((el) => {
     el?.addEventListener("change", refreshCurrentPanel);
   });
 
   ui.stateSearch?.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
+
     const query = ui.stateSearch.value.trim().toLowerCase();
     if (!query) return;
+
     if (currentViewMode === "state") {
-      const match = [...stateIndex.keys()].find(name => name.toLowerCase().includes(query));
+      const match = [...stateIndex.keys()].find((name) => name.toLowerCase().includes(query));
       if (match) renderStatePanel(match);
     } else {
-      const match = [...isoToStates.keys()].find(name => name.toLowerCase().includes(query));
+      const match = [...isoToStates.keys()].find((name) => name.toLowerCase().includes(query));
       if (match) renderIsoPanel(match);
     }
   });
 
   ui.clearFiltersBtn?.addEventListener("click", () => {
-    ui.stateSearch.value = "";
-    ui.filterIso.value = "";
-    ui.filterCategory.value = "";
-    ui.filterImpact.value = "";
+    if (ui.stateSearch) ui.stateSearch.value = "";
+    if (ui.filterIso) ui.filterIso.value = "";
+    if (ui.filterCategory) ui.filterCategory.value = "";
+    if (ui.filterImpact) ui.filterImpact.value = "";
     if (ui.filterDirection) ui.filterDirection.value = "";
+
     hideHoverTooltip();
     refreshCurrentPanel();
   });
 
-  if (ui.methodologyBtn) {
-    ui.methodologyBtn.addEventListener("click", () => {
-      ui.methodologyPanel.classList.toggle("methodology-panel--hidden");
-    });
-  }
-  if (ui.methodologyClose) {
-    ui.methodologyClose.addEventListener("click", () => {
-      ui.methodologyPanel.classList.add("methodology-panel--hidden");
-    });
-  }
+  ui.methodologyBtn?.addEventListener("click", () => {
+    ui.methodologyPanel?.classList.toggle("methodology-panel--hidden");
+  });
+
+  ui.methodologyClose?.addEventListener("click", () => {
+    ui.methodologyPanel?.classList.add("methodology-panel--hidden");
+  });
 }
 
 function initMap() {
+  if (!window.mapboxgl) {
+    throw new Error("Mapbox GL JS did not load.");
+  }
+
+  if (!MAPBOX_TOKEN || MAPBOX_TOKEN.includes("PASTE_YOUR_PUBLIC_MAPBOX_TOKEN_HERE")) {
+    throw new Error("Mapbox token is still a placeholder. Add your public token at the top of script.js.");
+  }
+
+  mapboxgl.accessToken = MAPBOX_TOKEN;
+
   map = new mapboxgl.Map({
     container: "map",
     style: "mapbox://styles/mapbox/light-v11",
@@ -615,11 +648,13 @@ function initMap() {
     map.on("mousemove", "states-fill", (e) => {
       const feature = e.features?.[0];
       if (!feature) return;
+
       map.getCanvas().style.cursor = "pointer";
 
       if (hoveredStateId !== null && hoveredStateId !== feature.id) {
         safeSetFeatureState("states", hoveredStateId, { hover: false });
       }
+
       hoveredStateId = feature.id;
       safeSetFeatureState("states", hoveredStateId, { hover: true });
 
@@ -647,6 +682,7 @@ function initMap() {
     map.on("click", "states-fill", (e) => {
       const feature = e.features?.[0];
       if (!feature) return;
+
       const stateName = normalizeStateName(feature.properties?.NAME || feature.properties?.name || "");
       renderStatePanel(stateName);
     });
@@ -654,11 +690,13 @@ function initMap() {
     map.on("mousemove", "iso-fill", (e) => {
       const feature = e.features?.[0];
       if (!feature) return;
+
       map.getCanvas().style.cursor = "pointer";
 
       if (hoveredIsoId !== null && hoveredIsoId !== feature.id) {
         safeSetFeatureState("iso", hoveredIsoId, { hover: false });
       }
+
       hoveredIsoId = feature.id;
       safeSetFeatureState("iso", hoveredIsoId, { hover: true });
 
@@ -666,8 +704,8 @@ function initMap() {
       const stateNames = isoToStates.get(isoName) || [];
       const filters = getFilters();
       const entryCount = stateNames
-        .flatMap(state => entriesByState.get(state) || [])
-        .filter(entry => entryMatchesFilters(entry, filters))
+        .flatMap((state) => entriesByState.get(state) || [])
+        .filter((entry) => entryMatchesFilters(entry, filters))
         .length;
 
       showHoverTooltip(
@@ -687,12 +725,14 @@ function initMap() {
     map.on("click", "iso-fill", (e) => {
       const feature = e.features?.[0];
       if (!feature) return;
+
       const isoName = String(feature.properties?.iso || "").trim();
       if (!isoName) return;
       renderIsoPanel(isoName);
     });
 
     setLayerVisibility();
+    clearStatus();
   });
 }
 
@@ -701,19 +741,21 @@ function renderTopRiskStates() {
   ui.topRiskList.innerHTML = "";
 
   const ranked = [...stateIndex.values()]
-    .filter(state => Number.isFinite(state.riskScoreTotal))
+    .filter((state) => Number.isFinite(state.riskScoreTotal))
     .sort((a, b) => a.riskScoreTotal - b.riskScoreTotal)
     .slice(0, 5);
 
-  ranked.forEach(state => {
+  ranked.forEach((state) => {
     const li = document.createElement("li");
     const link = document.createElement("a");
     link.href = "#";
     link.textContent = `${state.state} (${state.riskScoreTotal})`;
+
     link.addEventListener("click", (e) => {
       e.preventDefault();
       renderStatePanel(state.state);
     });
+
     li.appendChild(link);
     ui.topRiskList.appendChild(li);
   });
@@ -721,17 +763,25 @@ function renderTopRiskStates() {
 
 async function main() {
   try {
-    const [rawStatesGeo, rawIsoGeo, rawStatesApi, rawEntriesApi] = await Promise.all([
-      fetchJson("/data/us-states.geojson"),
-      fetchJson("/data/iso-rto.geojson"),
-      fetchJson("/api/states"),
-      fetchJson("/api/entries")
+    showStatus("Loading map data...");
+
+    const [statesGeoRes, isoGeoRes, statesApiRes, entriesApiRes] = await Promise.all([
+      fetchJson(DATA_URLS.statesGeo),
+      fetchJson(DATA_URLS.isoGeo),
+      fetchJson(DATA_URLS.statesApi, { optional: true, fallback: [] }),
+      fetchJson(DATA_URLS.entriesApi, { optional: true, fallback: [] }),
     ]);
 
-    statesGeo = rawStatesGeo;
-    isoGeo = rawIsoGeo;
-    statesData = rawStatesApi.states || rawStatesApi;
-    entriesData = rawEntriesApi.entries || rawEntriesApi;
+    statesGeo = statesGeoRes?.type === "FeatureCollection"
+      ? statesGeoRes
+      : { type: "FeatureCollection", features: [] };
+
+    isoGeo = isoGeoRes?.type === "FeatureCollection"
+      ? isoGeoRes
+      : { type: "FeatureCollection", features: [] };
+
+    statesData = Array.isArray(statesApiRes) ? statesApiRes : (statesApiRes?.states || []);
+    entriesData = Array.isArray(entriesApiRes) ? entriesApiRes : (entriesApiRes?.entries || []);
 
     buildIndexes();
     attachStateRiskToGeoJSON();
@@ -739,12 +789,16 @@ async function main() {
     bindUI();
     renderTopRiskStates();
     renderLastUpdated();
-    initMap();
 
+    if (!statesData.length || !entriesData.length) {
+      showStatus("Map geometry loaded, but /api/states or /api/entries returned no usable data. Base map should still render.", true);
+    }
+
+    initMap();
   } catch (err) {
     console.error(err);
-    alert(`Map failed to load: ${err.message}`);
+    showStatus(err.message, true);
   }
 }
 
-main();
+document.addEventListener("DOMContentLoaded", main);
