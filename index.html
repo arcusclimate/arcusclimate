@@ -14,12 +14,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <div class="brand__logo">
-        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <path d="M4 22 Q14 4 24 22" stroke="#3B8FE8" stroke-width="2.5" stroke-linecap="round" fill="none"/>
-          <path d="M8 22 Q14 10 20 22" stroke="#3B8FE8" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.6"/>
-        </svg>
-      </div>
+      <div class="brand__logo"><img src="./logo.png" alt="Arcus Climate" class="brand__logo-img" /></div>
       <div>
         <div class="brand__title">Arcus Climate</div>
         <div class="brand__subtitle">AI infrastructure risk intelligence</div>
@@ -31,38 +26,41 @@
         <button id="viewStateBtn" class="toggle__btn toggle__btn--active">States</button>
         <button id="viewIsoBtn" class="toggle__btn">ISO / RTO</button>
       </div>
+      <input id="stateSearch" class="toolbar__input" type="text" placeholder="Search..." />
+      <select id="filterIso" class="toolbar__select toolbar__select--iso"><option value="">Filter by Grid Region</option></select>
+      <select id="filterCategory" class="toolbar__select"><option value="">All Categories</option></select>
+      <select id="filterImpact" class="toolbar__select"><option value="">All Impact</option></select>
+      <select id="filterDirection" class="toolbar__select"><option value="">All Directions</option></select>
+      <button id="clearFiltersBtn" class="toolbar__btn">Clear</button>
+      <button id="methodologyBtn" class="toolbar__btn toolbar__btn--method" title="Scoring methodology">?</button>
+    </div>
+  </div>
 
-      <input id="stateSearch" class="toolbar__input" type="text" placeholder="Search a state or ISO..." />
-
-      <select id="filterIso" class="toolbar__select">
-        <option value="">All ISO / RTO</option>
-      </select>
-
-      <select id="filterCategory" class="toolbar__select">
-        <option value="">All Categories</option>
-      </select>
-
-      <select id="filterImpact" class="toolbar__select">
-        <option value="">All Impact</option>
-      </select>
-
-      <select id="filterType" class="toolbar__select">
-        <option value="">All Signal Types</option>
-      </select>
-
-      <div class="toolbar__row2">
-        <select id="filterDirection" class="toolbar__select">
-          <option value="">All Directions</option>
-        </select>
-
-        <select id="filterSignalCategory" class="toolbar__select">
-          <option value="">All Signal Categories</option>
-        </select>
-
-        <button id="clearFiltersBtn" class="toolbar__btn">Clear</button>
-
-        <a href="mailto:info@arcusclimate.co" class="toolbar__cta">Talk to us</a>
+  <div id="methodologyPanel" class="methodology-panel methodology-panel--hidden" role="dialog" aria-label="Scoring methodology">
+    <div class="methodology-panel__inner">
+      <div class="methodology-panel__header">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="methodology-panel__badge">Beta</span>
+          <span class="methodology-panel__title">Scoring Methodology</span>
+        </div>
+        <button id="methodologyClose" class="methodology-panel__close" aria-label="Close">×</button>
       </div>
+      <p class="methodology-panel__intro">Each signal is scored across five dimensions. State scores are the sum of all entry scores. Risk tiers are assigned based on that total.</p>
+      <div class="methodology-panel__dims">
+        <div class="methodology-panel__dim"><div class="methodology-panel__dim-name">Grid <span class="methodology-panel__dim-range">−10 to +10</span></div><div class="methodology-panel__dim-desc">Capacity, reliability, and interconnection</div></div>
+        <div class="methodology-panel__dim"><div class="methodology-panel__dim-name">Regulatory <span class="methodology-panel__dim-range">−10 to +10</span></div><div class="methodology-panel__dim-desc">Policy, permitting, tariffs, zoning, incentives</div></div>
+        <div class="methodology-panel__dim"><div class="methodology-panel__dim-name">Water <span class="methodology-panel__dim-range">−10 to 0</span></div><div class="methodology-panel__dim-desc">Scarcity, restrictions, community opposition</div></div>
+        <div class="methodology-panel__dim"><div class="methodology-panel__dim-name">Clean Energy <span class="methodology-panel__dim-range">−5 to +5</span></div><div class="methodology-panel__dim-desc">Renewable access, PPA market, RPS strength</div></div>
+        <div class="methodology-panel__dim"><div class="methodology-panel__dim-name">Saturation <span class="methodology-panel__dim-range">−5 to +5</span></div><div class="methodology-panel__dim-desc">Development pressure and cost socialization</div></div>
+      </div>
+      <div class="methodology-panel__tiers">
+        <div class="methodology-panel__tier-title">Risk Tiers</div>
+        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--low"></span><strong>Low Risk</strong>&nbsp; ≥ +5</div>
+        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--emerging"></span><strong>Emerging Risk</strong>&nbsp; −20 to +4</div>
+        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--moderate"></span><strong>Moderate Risk</strong>&nbsp; −70 to −21</div>
+        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--high"></span><strong>High Risk</strong>&nbsp; ≤ −71</div>
+      </div>
+      <p class="methodology-panel__footer">Methodology in active development. <a href="mailto:info@arcusclimate.co">Contact us</a> with feedback.</p>
     </div>
   </div>
 
@@ -104,7 +102,7 @@
       <span class="legend__swatch" style="background:#A8D5BA;"></span>
       <div>
         <div class="legend__label">Low Risk</div>
-        <div class="legend__range">Score: ≥ 6</div>
+        <div class="legend__range">Score: ≥ +5</div>
       </div>
     </div>
 
@@ -112,7 +110,7 @@
       <span class="legend__swatch" style="background:#F3E6AE;"></span>
       <div>
         <div class="legend__label">Emerging Risk</div>
-        <div class="legend__range">Score: -5 to 5</div>
+        <div class="legend__range">Score: −20 to +4</div>
       </div>
     </div>
 
@@ -120,7 +118,7 @@
       <span class="legend__swatch" style="background:#F7C6C7;"></span>
       <div>
         <div class="legend__label">Moderate Risk</div>
-        <div class="legend__range">Score: -17 to -6</div>
+        <div class="legend__range">Score: −70 to −21</div>
       </div>
     </div>
 
@@ -128,18 +126,26 @@
       <span class="legend__swatch" style="background:#E57373;"></span>
       <div>
         <div class="legend__label">High Risk</div>
-        <div class="legend__range">Score: ≤ -18</div>
+        <div class="legend__range">Score: ≤ −71</div>
       </div>
     </div>
 
     <div class="legend__divider"></div>
 
     <div class="legend__note">
-      Scores reflect a weighted sum of signals related to grid capacity, policy and regulation, water constraints, and hyperscale development activity.
+      Scores sum five dimensions: grid capacity, regulatory environment, water risk, clean energy access, and market saturation.
     </div>
 
     <div class="legend__updated" id="legendLastUpdated"></div>
   </div>
+
+  <a href="https://arcusclimate.co/#contact" target="_blank" rel="noopener" class="floating-cta" aria-label="Get in touch with Arcus Climate">
+    Talk to us →
+  </a>
+
+  <a href="https://arcusclimate.co/#contact" target="_blank" rel="noopener" class="floating-cta" aria-label="Get in touch with Arcus Climate">
+    Talk to us →
+  </a>
 
   <div id="topRiskPanel" class="mini-panel">
     <div class="mini-panel__title">Top 5 Highest-Risk States</div>
@@ -147,12 +153,4 @@
   </div>
 
   <div class="map-footer">
-    <span>Powered by <strong>Arcus Climate</strong> · <a href="mailto:info@arcusclimate.co">info@arcusclimate.co</a></span>
-  </div>
-
-  <script>
-    window.MAPBOX_TOKEN = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg";
-  </script>
-  <script src="./script.js"></script>
-</body>
-</html>
+    <span>Powered by <strong>Arcus Climate</strong> · <a href="/cdn-cgi/l/email-protection#d6bfb8b0b996b7a4b5a3a5b5babfbbb7a2b3f8b5b9"><span class="__cf_email__" data-cfemail="573e393138173625342224343b3e3a362332793438">[email&#
