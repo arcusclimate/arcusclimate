@@ -7,10 +7,10 @@ const ENABLE_HOVER_TOOLTIPS = true;
 const ENABLE_ISO_PANEL = true;
 
 const RISK_CONTEXT = {
-  "High Risk": "This state faces compounding grid, regulatory, and capacity constraints that make data center siting costly and uncertain. AI infrastructure growth here carries elevated operational and reputational risk.",
-  "Moderate Risk": "This state has meaningful infrastructure or regulatory headwinds. Growth is possible but requires careful diligence on grid capacity, procurement, and policy trajectory.",
-  "Emerging Risk": "This state shows early warning signals. Current conditions are manageable, but the risk profile is shifting — worth monitoring closely as AI compute demand grows.",
-  "Low Risk": "This state presents favorable conditions for AI infrastructure growth, with supportive grid capacity, policy environment, and limited near-term constraint signals.",
+  "High Risk": "This state faces compounding constraints across grid capacity, regulatory environment, and community opposition that make new data center siting costly, slow, or politically uncertain. Score ≤ −71.",
+  "Moderate Risk": "This state has meaningful infrastructure or regulatory headwinds. Growth is possible but requires careful diligence on grid timelines, tariff exposure, and policy trajectory. Score −21 to −70.",
+  "Emerging Risk": "This state shows early warning signals. Current conditions are workable, but the risk profile is shifting as AI compute demand grows. Monitor grid, water, and legislative trends. Score −20 to +4.",
+  "Low Risk": "This state presents relatively favorable conditions for AI infrastructure siting, with supportive grid capacity, policy environment, and limited near-term constraint signals. Score ≥ +5.",
   "No Data": ""
 };
 
@@ -39,10 +39,11 @@ const ui = {
   filterIso: document.getElementById("filterIso"),
   filterCategory: document.getElementById("filterCategory"),
   filterImpact: document.getElementById("filterImpact"),
-  filterType: document.getElementById("filterType"),
   filterDirection: document.getElementById("filterDirection"),
-  filterSignalCategory: document.getElementById("filterSignalCategory"),
   clearFiltersBtn: document.getElementById("clearFiltersBtn"),
+  methodologyBtn: document.getElementById("methodologyBtn"),
+  methodologyPanel: document.getElementById("methodologyPanel"),
+  methodologyClose: document.getElementById("methodologyClose"),
 
   viewStateBtn: document.getElementById("viewStateBtn"),
   viewIsoBtn: document.getElementById("viewIsoBtn"),
@@ -218,12 +219,23 @@ function attachStateRiskToGeoJSON() {
 
 function fillFilters() {
   const allEntries = [...entriesByState.values()].flat();
-  fillSelect(ui.filterIso, uniqueSorted([...isoToStates.keys()]), "All ISO / RTO");
+
+  // ISO/RTO filter — show name + state count for clarity
+  if (ui.filterIso) {
+    ui.filterIso.innerHTML = '<option value="">All Grid Regions</option>';
+    const isoList = uniqueSorted([...isoToStates.keys()]);
+    isoList.forEach(iso => {
+      const stateCount = (isoToStates.get(iso) || []).length;
+      const opt = document.createElement("option");
+      opt.value = iso;
+      opt.textContent = `${iso} (${stateCount} states)`;
+      ui.filterIso.appendChild(opt);
+    });
+  }
+
   fillSelect(ui.filterCategory, uniqueSorted(allEntries.map(e => e.category)), "All Categories");
   fillSelect(ui.filterImpact, uniqueSorted(allEntries.map(e => e.impactLevel)), "All Impact");
-  fillSelect(ui.filterType, uniqueSorted(allEntries.map(e => e.signalType)), "All Signal Types");
   fillSelect(ui.filterDirection, uniqueSorted(allEntries.map(e => e.signalDirection)), "All Directions");
-  fillSelect(ui.filterSignalCategory, uniqueSorted(allEntries.map(e => e.signalCategory)), "All Signal Categories");
 }
 
 function getFilters() {
@@ -232,9 +244,7 @@ function getFilters() {
     iso: String(ui.filterIso?.value || "").trim(),
     category: String(ui.filterCategory?.value || "").trim(),
     impact: String(ui.filterImpact?.value || "").trim(),
-    type: String(ui.filterType?.value || "").trim(),
     direction: String(ui.filterDirection?.value || "").trim(),
-    signalCategory: String(ui.filterSignalCategory?.value || "").trim(),
   };
 }
 
@@ -250,9 +260,7 @@ function entryMatchesFilters(entry, filters) {
   }
   if (filters.category && entry.category !== filters.category) return false;
   if (filters.impact && entry.impactLevel !== filters.impact) return false;
-  if (filters.type && entry.signalType !== filters.type) return false;
   if (filters.direction && entry.signalDirection !== filters.direction) return false;
-  if (filters.signalCategory && entry.signalCategory !== filters.signalCategory) return false;
   return true;
 }
 
@@ -328,7 +336,7 @@ function renderStatePanel(stateName) {
 
   ui.panelMeta.innerHTML = [
     riskBadge,
-    Number.isFinite(state.riskScoreTotal) ? `Score: ${state.riskScoreTotal}` : "",
+    Number.isFinite(state.riskScoreTotal) ? `Risk score: ${state.riskScoreTotal}` : "",
     Number.isFinite(state.entryCount) ? `${state.entryCount} signals` : "",
     (state.gridRegions || []).length ? `ISO/RTO: ${state.gridRegions.join(", ")}` : ""
   ].filter(Boolean).join(" · ");
@@ -451,9 +459,7 @@ function bindUI() {
     ui.filterIso,
     ui.filterCategory,
     ui.filterImpact,
-    ui.filterType,
     ui.filterDirection,
-    ui.filterSignalCategory
   ].forEach(el => {
     el?.addEventListener("change", refreshCurrentPanel);
   });
@@ -476,12 +482,21 @@ function bindUI() {
     ui.filterIso.value = "";
     ui.filterCategory.value = "";
     ui.filterImpact.value = "";
-    ui.filterType.value = "";
-    ui.filterDirection.value = "";
-    ui.filterSignalCategory.value = "";
+    if (ui.filterDirection) ui.filterDirection.value = "";
     hideHoverTooltip();
     refreshCurrentPanel();
   });
+
+  if (ui.methodologyBtn) {
+    ui.methodologyBtn.addEventListener("click", () => {
+      ui.methodologyPanel.classList.toggle("methodology-panel--hidden");
+    });
+  }
+  if (ui.methodologyClose) {
+    ui.methodologyClose.addEventListener("click", () => {
+      ui.methodologyPanel.classList.add("methodology-panel--hidden");
+    });
+  }
 }
 
 function initMap() {
