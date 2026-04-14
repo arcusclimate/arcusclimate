@@ -3,6 +3,10 @@ const MAPBOX_TOKEN = (() => {
   return (window.__env?.MAPBOX_TOKEN || window.MAPBOX_TOKEN || "").trim();
 })();
 
+<script>
+  window.MAPBOX_TOKEN = "YOUR_MAPBOX_TOKEN_HERE";
+</script>
+
 const ENABLE_HOVER_TOOLTIPS = true;
 const ENABLE_ISO_PANEL = true;
 
