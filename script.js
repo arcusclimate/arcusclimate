@@ -3,6 +3,8 @@ const MAPBOX_TOKEN = (() => {
   return (window.__env?.MAPBOX_TOKEN || window.MAPBOX_TOKEN || "").trim();
 })();
 
+mapboxgl.accessToken = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg ";
+
 <script>
   window.MAPBOX_TOKEN = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg";
 </script>
