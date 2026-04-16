@@ -41,6 +41,7 @@ const ui = {
   methodologyClose: document.getElementById("methodologyClose"),
   viewStateBtn: document.getElementById("viewStateBtn"),
   viewIsoBtn: document.getElementById("viewIsoBtn"),
+  viewNationalBtn: document.getElementById("viewNationalBtn"),
 };
 
 let map = null;
@@ -344,8 +345,16 @@ function getRiskBadgeClass(riskLevel) {
 }
 
 function renderStatePanel(stateName) {
+  if (stateName === "National") {
+    renderNationalPanel();
+    return;
+  }
+
   const state = stateIndex.get(stateName);
   if (!state) return;
+
+  // Restore Top Risk Signals section if hidden by National view
+  if (ui.panelTopSignals?.parentElement) ui.panelTopSignals.parentElement.style.display = "";
 
   currentContext = { type: "state", value: stateName };
 
@@ -419,10 +428,43 @@ function renderIsoPanel(isoName) {
   showPanel();
 }
 
+function renderNationalPanel() {
+  currentContext = { type: "national", value: "National" };
+
+  const filters = getFilters();
+  const entries = (entriesByState.get("National") || []).filter((e) => entryMatchesFilters(e, filters));
+
+  if (ui.panelTitle) ui.panelTitle.textContent = "National Media Coverage";
+
+  if (ui.panelMeta) {
+    ui.panelMeta.innerHTML = `<span class="risk-badge risk-badge--national">National</span> ${entries.length} article${entries.length === 1 ? "" : "s"} · via Data Center Watch`;
+  }
+
+  if (ui.panelRiskContext) {
+    ui.panelRiskContext.textContent = "National-level media coverage tracking how data center expansion, AI infrastructure, and community opposition are being covered across major publications.";
+    ui.panelRiskContext.style.display = "block";
+  }
+
+  renderTopSignals([]);
+  if (ui.panelTopSignals?.parentElement) {
+    ui.panelTopSignals.parentElement.style.display = "none";
+  }
+
+  renderEntries(entries);
+  showPanel();
+
+  // Deselect any highlighted state on the map
+  if (map && selectedStateId !== null && map.getSource("states")) {
+    map.setFeatureState({ source: "states", id: selectedStateId }, { selected: false });
+  }
+  selectedStateId = null;
+}
+
 function refreshCurrentPanel() {
   if (!currentContext) return;
   if (currentContext.type === "state") renderStatePanel(currentContext.value);
   if (currentContext.type === "iso") renderIsoPanel(currentContext.value);
+  if (currentContext.type === "national") renderNationalPanel();
 }
 
 function safeSetFeatureState(source, id, state) {
@@ -477,16 +519,32 @@ function bindUI() {
     currentViewMode = "state";
     ui.viewStateBtn?.classList.add("toggle__btn--active");
     ui.viewIsoBtn?.classList.remove("toggle__btn--active");
+    ui.viewNationalBtn?.classList.remove("toggle__btn--active");
+    if (ui.panelTopSignals?.parentElement) ui.panelTopSignals.parentElement.style.display = "";
     setLayerVisibility();
     hideHoverTooltip();
+    hidePanel();
   });
 
   ui.viewIsoBtn?.addEventListener("click", () => {
     currentViewMode = "iso";
     ui.viewIsoBtn?.classList.add("toggle__btn--active");
     ui.viewStateBtn?.classList.remove("toggle__btn--active");
+    ui.viewNationalBtn?.classList.remove("toggle__btn--active");
+    if (ui.panelTopSignals?.parentElement) ui.panelTopSignals.parentElement.style.display = "";
     setLayerVisibility();
     hideHoverTooltip();
+    hidePanel();
+  });
+
+  ui.viewNationalBtn?.addEventListener("click", () => {
+    currentViewMode = "national";
+    ui.viewNationalBtn?.classList.add("toggle__btn--active");
+    ui.viewStateBtn?.classList.remove("toggle__btn--active");
+    ui.viewIsoBtn?.classList.remove("toggle__btn--active");
+    setLayerVisibility();
+    hideHoverTooltip();
+    renderNationalPanel();
   });
 
   [ui.filterIso, ui.filterCategory, ui.filterImpact, ui.filterDirection].forEach((el) => {
@@ -499,8 +557,13 @@ function bindUI() {
     const query = ui.stateSearch.value.trim().toLowerCase();
     if (!query) return;
 
-    if (currentViewMode === "state") {
-      const match = [...stateIndex.keys()].find((name) => name.toLowerCase().includes(query));
+    if (query === "national" || query === "media coverage") {
+      ui.viewNationalBtn?.click();
+      return;
+    }
+
+    if (currentViewMode === "state" || currentViewMode === "national") {
+      const match = [...stateIndex.keys()].find((name) => name.toLowerCase().includes(query) && name !== "National");
       if (match) renderStatePanel(match);
     } else {
       const match = [...isoToStates.keys()].find((name) => name.toLowerCase().includes(query));
@@ -741,7 +804,7 @@ function renderTopRiskStates() {
   ui.topRiskList.innerHTML = "";
 
   const ranked = [...stateIndex.values()]
-    .filter((state) => Number.isFinite(state.riskScoreTotal))
+    .filter((state) => Number.isFinite(state.riskScoreTotal) && state.state !== "National")
     .sort((a, b) => a.riskScoreTotal - b.riskScoreTotal)
     .slice(0, 5);
 

@@ -859,3 +859,8 @@ html, body {
 
 /* ── Remove old toolbar CTA if still present ─────────── */
 .toolbar__cta { display:none; }
+
+/* ── National media coverage badge ─────────────────────── */
+.risk-badge--national {
+  background:#EFF6FF; color:#1D4ED8;
+}
