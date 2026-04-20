@@ -751,20 +751,20 @@ function applyMapStyle() {
     if (layer.id === "state-label") {
       map.setLayoutProperty("state-label", "text-transform", "none");
       map.setLayoutProperty("state-label", "text-font", ["DIN Pro Medium", "Arial Unicode MS Regular"]);
-      map.setLayoutProperty("state-label", "text-size", 11);
+      map.setLayoutProperty("state-label", "text-size", 12);
       map.setLayoutProperty("state-label", "text-letter-spacing", 0.05);
-      map.setPaintProperty("state-label", "text-color", "#CBD5E1");
-      map.setPaintProperty("state-label", "text-halo-color", "rgba(10, 20, 50, 0.9)");
-      map.setPaintProperty("state-label", "text-halo-width", 1.2);
+      map.setPaintProperty("state-label", "text-color", "#FFFFFF");
+      map.setPaintProperty("state-label", "text-halo-color", "rgba(0, 0, 0, 0.85)");
+      map.setPaintProperty("state-label", "text-halo-width", 2);
     }
 
     /* City / settlement labels */
     if (layer.id === "settlement-major-label" || layer.id === "settlement-minor-label" || layer.id === "settlement-subdivision-label") {
       map.setLayoutProperty(layer.id, "text-font", ["DIN Pro Regular", "Arial Unicode MS Regular"]);
       map.setLayoutProperty(layer.id, "text-size", 10);
-      map.setPaintProperty(layer.id, "text-color", "#94A3B8");
-      map.setPaintProperty(layer.id, "text-halo-color", "rgba(10, 20, 50, 0.8)");
-      map.setPaintProperty(layer.id, "text-halo-width", 1);
+      map.setPaintProperty(layer.id, "text-color", "#E2E8F0");
+      map.setPaintProperty(layer.id, "text-halo-color", "rgba(0, 0, 0, 0.8)");
+      map.setPaintProperty(layer.id, "text-halo-width", 1.5);
     }
 
     /* Country labels */
@@ -772,7 +772,7 @@ function applyMapStyle() {
       map.setLayoutProperty(layer.id, "text-transform", "none");
       map.setLayoutProperty(layer.id, "text-font", ["DIN Pro Medium", "Arial Unicode MS Regular"]);
       map.setLayoutProperty(layer.id, "text-size", 12);
-      map.setPaintProperty(layer.id, "text-color", "#64748B");
+      map.setPaintProperty(layer.id, "text-color", "#94A3B8");
       map.setPaintProperty(layer.id, "text-halo-color", "rgba(10, 20, 50, 0.8)");
       map.setPaintProperty(layer.id, "text-halo-width", 1);
     }
