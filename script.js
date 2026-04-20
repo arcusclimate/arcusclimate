@@ -609,8 +609,7 @@ function setLayerVisibility() {
 function renderLastUpdated() {
   if (!ui.legendLastUpdated) return;
 
-    /* Apply navy background, clean labels, and move labels above fills */
-    applyMapStyle();
+/* applyMapStyle moved to after layers are added */
 
   const dates = [...stateIndex.values()]
     .map((s) => s.lastUpdated)
@@ -803,10 +802,20 @@ function applyMapStyle() {
     }
 
     /* State / admin borders: subtle */
-    if (layer.id.includes("admin") && layer.type === "line") {
+if (layer.id.includes("admin") && layer.type === "line") {
       map.setPaintProperty(layer.id, "line-color", "rgba(148, 163, 184, 0.12)");
     }
   }
+
+  /* Move label layers above choropleth fills */
+  try {
+    map.moveLayer("state-label");
+    map.moveLayer("settlement-major-label");
+    map.moveLayer("settlement-minor-label");
+    map.moveLayer("settlement-subdivision-label");
+    map.moveLayer("country-label");
+  } catch(e) { /* layer may not exist */ }
+}
 
   /* Move label layers above choropleth fills */
   try {
