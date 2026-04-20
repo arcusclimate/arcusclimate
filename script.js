@@ -107,7 +107,10 @@ function normalizeStateName(value) {
 
 function parseTopSignals(value) {
   if (!value) return [];
-  if (Array.isArray(value)) return value.filter(Boolean);
+  // FIX: Filter out Airtable formula error objects like { error: "#ERROR!" }
+  if (Array.isArray(value)) {
+    return value.filter(v => Boolean(v) && typeof v === "string");
+  }
   return String(value)
     .split(",")
     .map((v) => v.trim())
@@ -164,6 +167,79 @@ function hideHoverTooltip() {
   ui.hoverTooltip.classList.add("hover-tooltip--hidden");
 }
 
+/* ── Signal direction helpers ─────────────────────────── */
+
+function getSignalDirectionMeta(direction) {
+  const d = String(direction || "").toLowerCase().trim();
+  if (!d) return null;
+  if (d.includes("negative") || d.includes("adverse") || d.includes("warning") || d.includes("risk")) {
+    return { label: "↓ Negative", cls: "dir-badge dir-badge--neg" };
+  }
+  if (d.includes("positive") || d.includes("favorable") || d.includes("opportunit")) {
+    return { label: "↑ Positive", cls: "dir-badge dir-badge--pos" };
+  }
+  if (d.includes("neutral") || d.includes("mixed") || d.includes("informational") || d.includes("context")) {
+    return { label: "→ Neutral", cls: "dir-badge dir-badge--neutral" };
+  }
+  // Fallback: show the raw value styled neutrally
+  return { label: direction, cls: "dir-badge dir-badge--neutral" };
+}
+
+/* ── State ranking helper ─────────────────────────────── */
+
+function getStateRank(stateName) {
+  const states = [...stateIndex.values()]
+    .filter(s => s.state !== "National" && Number.isFinite(s.riskScoreTotal))
+    .sort((a, b) => a.riskScoreTotal - b.riskScoreTotal); // ascending = most constrained first
+  const idx = states.findIndex(s => s.state === stateName);
+  return idx >= 0 ? { rank: idx + 1, total: states.length } : null;
+}
+
+function ordinal(n) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+/* ── URL routing ──────────────────────────────────────── */
+
+function syncUrl(context) {
+  if (!context) {
+    history.replaceState(null, "", window.location.pathname);
+    return;
+  }
+  const params = new URLSearchParams();
+  if (context.type === "state") params.set("state", context.value);
+  else if (context.type === "iso") params.set("iso", context.value);
+  else if (context.type === "national") params.set("view", "national");
+  history.replaceState(null, "", `${window.location.pathname}?${params}`);
+}
+
+function readUrlParams() {
+  const params = new URLSearchParams(window.location.search);
+  const state = params.get("state");
+  const iso = params.get("iso");
+  const view = params.get("view");
+
+  if (state && stateIndex.has(state)) {
+    renderStatePanel(state);
+  } else if (iso && isoToStates.has(iso)) {
+    currentViewMode = "iso";
+    ui.viewIsoBtn?.classList.add("toggle__btn--active");
+    ui.viewStateBtn?.classList.remove("toggle__btn--active");
+    ui.viewNationalBtn?.classList.remove("toggle__btn--active");
+    setLayerVisibility();
+    renderIsoPanel(iso);
+  } else if (view === "national") {
+    currentViewMode = "national";
+    ui.viewNationalBtn?.classList.add("toggle__btn--active");
+    ui.viewStateBtn?.classList.remove("toggle__btn--active");
+    ui.viewIsoBtn?.classList.remove("toggle__btn--active");
+    setLayerVisibility();
+    renderNationalPanel();
+  }
+}
+
 /* ── Data indexing ────────────────────────────────────── */
 
 function buildIndexes() {
@@ -177,7 +253,7 @@ function buildIndexes() {
 
     const gridRegions = Array.isArray(s.gridRegions)
       ? s.gridRegions
-      : (s.gridRegions ? [s.gridRegions] : []);
+      : (s.gridRegions ? [s.gridRegions] = []);
 
     const rec = {
       state: name,
@@ -354,6 +430,92 @@ function entryMatchesFilters(entry, filters) {
   return true;
 }
 
+/* ── Legend tier counts ───────────────────────────────── */
+
+function renderLegendStats() {
+  const tierCounts = { "High Risk": 0, "Moderate Risk": 0, "Emerging Risk": 0, "Low Risk": 0 };
+  for (const s of stateIndex.values()) {
+    if (s.state === "National") continue;
+    if (s.calculatedRiskLevel in tierCounts) tierCounts[s.calculatedRiskLevel]++;
+  }
+  // Legend rows appear in order: Low Risk, Emerging Risk, Moderate Risk, High Risk
+  const tierOrder = ["Low Risk", "Emerging Risk", "Moderate Risk", "High Risk"];
+  const labelEls = document.querySelectorAll(".legend__label");
+  labelEls.forEach((el, i) => {
+    const tier = tierOrder[i];
+    if (tier !== undefined && tierCounts[tier] !== undefined) {
+      el.innerHTML = `${tier} <span class="legend__count">(${tierCounts[tier]})</span>`;
+    }
+  });
+}
+
+/* ── Live search suggestions ──────────────────────────── */
+
+let searchSuggestionsEl = null;
+
+function getOrCreateSuggestionsEl() {
+  if (searchSuggestionsEl) return searchSuggestionsEl;
+  searchSuggestionsEl = document.createElement("div");
+  searchSuggestionsEl.className = "search-suggestions";
+  searchSuggestionsEl.style.display = "none";
+  document.body.appendChild(searchSuggestionsEl);
+  return searchSuggestionsEl;
+}
+
+function showSearchSuggestions(query) {
+  const el = getOrCreateSuggestionsEl();
+  if (!query) { hideSearchSuggestions(); return; }
+
+  const inputEl = ui.stateSearch;
+  if (!inputEl) return;
+
+  const matches = [];
+
+  if (currentViewMode === "state" || currentViewMode === "national") {
+    for (const name of stateIndex.keys()) {
+      if (name === "National") continue;
+      if (name.toLowerCase().includes(query)) matches.push({ label: name, type: "state", value: name });
+      if (matches.length >= 7) break;
+    }
+  } else {
+    for (const iso of isoToStates.keys()) {
+      if (iso.toLowerCase().includes(query)) matches.push({ label: iso, type: "iso", value: iso });
+      if (matches.length >= 7) break;
+    }
+  }
+
+  if (!matches.length) { hideSearchSuggestions(); return; }
+
+  el.innerHTML = "";
+  matches.forEach(m => {
+    const item = document.createElement("div");
+    item.className = "search-suggestions__item";
+    const state = m.type === "state" ? stateIndex.get(m.value) : null;
+    const badge = state
+      ? `<span class="risk-badge ${getRiskBadgeClass(state.calculatedRiskLevel)}">${state.calculatedRiskLevel}</span>`
+      : "";
+    item.innerHTML = `<span class="search-suggestions__name">${m.label}</span>${badge}`;
+    item.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      if (ui.stateSearch) ui.stateSearch.value = "";
+      hideSearchSuggestions();
+      if (m.type === "state") renderStatePanel(m.value);
+      else renderIsoPanel(m.value);
+    });
+    el.appendChild(item);
+  });
+
+  const rect = inputEl.getBoundingClientRect();
+  el.style.left = `${rect.left}px`;
+  el.style.top = `${rect.bottom + 4}px`;
+  el.style.width = `${Math.max(rect.width, 220)}px`;
+  el.style.display = "block";
+}
+
+function hideSearchSuggestions() {
+  if (searchSuggestionsEl) searchSuggestionsEl.style.display = "none";
+}
+
 /* ── Panel rendering ──────────────────────────────────── */
 
 function renderTopSignals(items) {
@@ -387,12 +549,25 @@ function renderEntries(entries) {
 
   entries.forEach((entry) => {
     const li = document.createElement("li");
+
     const year = entry.publishedDate ? new Date(entry.publishedDate).getFullYear() : "";
-    const meta = [entry.category, entry.impactLevel, year || "", entry.sourceDomain || ""]
+    const isRecent = year && year >= 2026;
+    const yearLabel = year
+      ? `<span class="${isRecent ? "entry__year entry__year--new" : "entry__year"}">${year}</span>`
+      : "";
+
+    const dirMeta = getSignalDirectionMeta(entry.signalDirection);
+    const dirBadge = dirMeta ? `<span class="${dirMeta.cls}">${dirMeta.label}</span>` : "";
+
+    const meta = [entry.category, entry.impactLevel, entry.sourceDomain || ""]
       .filter(Boolean)
       .join(" · ");
 
     li.innerHTML = `
+      <div class="entry__header">
+        ${dirBadge}
+        ${yearLabel}
+      </div>
       <div class="entry__title">
         <a href="${entry.link || "#"}" target="_blank" rel="noopener noreferrer">${entry.title || "Untitled resource"}</a>
       </div>
@@ -424,6 +599,8 @@ function hidePanel() {
   }
 
   selectedStateId = null;
+  currentContext = null;
+  syncUrl(null);
 }
 
 function getRiskBadgeClass(riskLevel) {
@@ -449,6 +626,7 @@ function renderStatePanel(stateName) {
   if (ui.panelTopSignals?.parentElement) ui.panelTopSignals.parentElement.style.display = "";
 
   currentContext = { type: "state", value: stateName };
+  syncUrl(currentContext);
 
   if (ui.panelTitle) ui.panelTitle.textContent = stateName;
 
@@ -456,12 +634,18 @@ function renderStatePanel(stateName) {
     ? `<span class="risk-badge ${getRiskBadgeClass(state.calculatedRiskLevel)}">${state.calculatedRiskLevel}</span>`
     : "";
 
+  const rankInfo = getStateRank(stateName);
+  const rankLabel = rankInfo
+    ? `<span class="panel__rank">${ordinal(rankInfo.rank)} most constrained of ${rankInfo.total} states</span>`
+    : "";
+
   if (ui.panelMeta) {
     ui.panelMeta.innerHTML = [
       riskBadge,
-      Number.isFinite(state.riskScoreTotal) ? `Risk score: ${state.riskScoreTotal}` : "",
+      Number.isFinite(state.riskScoreTotal) ? `Score: ${state.riskScoreTotal}` : "",
       Number.isFinite(state.entryCount) ? `${state.entryCount} signals` : "",
-      (state.gridRegions || []).length ? `ISO/RTO: ${state.gridRegions.join(", ")}` : ""
+      (state.gridRegions || []).length ? `ISO/RTO: ${state.gridRegions.join(", ")}` : "",
+      rankLabel,
     ].filter(Boolean).join(" · ");
   }
 
@@ -496,6 +680,7 @@ function renderStatePanel(stateName) {
 
 function renderIsoPanel(isoName) {
   currentContext = { type: "iso", value: isoName };
+  syncUrl(currentContext);
 
   const stateNames = isoToStates.get(isoName) || [];
   const filters = getFilters();
@@ -547,18 +732,39 @@ function renderIsoPanel(isoName) {
 
 function renderNationalPanel() {
   currentContext = { type: "national", value: "National" };
+  syncUrl(currentContext);
 
   const filters = getFilters();
   const entries = (entriesByState.get("National") || []).filter((e) => entryMatchesFilters(e, filters));
 
-  if (ui.panelTitle) ui.panelTitle.textContent = "National Media Coverage";
+  /* Compute national tier breakdown stats */
+  const tierCounts = { "High Risk": 0, "Moderate Risk": 0, "Emerging Risk": 0, "Low Risk": 0 };
+  const scores = [];
+  for (const s of stateIndex.values()) {
+    if (s.state === "National") continue;
+    if (s.calculatedRiskLevel in tierCounts) tierCounts[s.calculatedRiskLevel]++;
+    if (Number.isFinite(s.riskScoreTotal)) scores.push(s.riskScoreTotal);
+  }
+  const avgNational = scores.length
+    ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+    : 0;
+
+  if (ui.panelTitle) ui.panelTitle.textContent = "National Overview";
 
   if (ui.panelMeta) {
-    ui.panelMeta.innerHTML = `<span class="risk-badge risk-badge--national">National</span> ${entries.length} article${entries.length === 1 ? "" : "s"} · via Data Center Watch`;
+    ui.panelMeta.innerHTML = `<span class="risk-badge risk-badge--national">National</span> Avg state score: ${avgNational} · ${entries.length} articles`;
   }
 
   if (ui.panelRiskContext) {
-    ui.panelRiskContext.textContent = "National-level media coverage tracking how data center expansion, AI infrastructure, and community opposition are being covered across major publications.";
+    ui.panelRiskContext.innerHTML = `
+      <div class="national-stats">
+        <div class="national-stats__row"><span class="tier-dot tier-dot--high"></span><strong>${tierCounts["High Risk"]}</strong>&nbsp;High Risk states</div>
+        <div class="national-stats__row"><span class="tier-dot tier-dot--moderate"></span><strong>${tierCounts["Moderate Risk"]}</strong>&nbsp;Moderate Risk states</div>
+        <div class="national-stats__row"><span class="tier-dot tier-dot--emerging"></span><strong>${tierCounts["Emerging Risk"]}</strong>&nbsp;Emerging Risk states</div>
+        <div class="national-stats__row"><span class="tier-dot tier-dot--low"></span><strong>${tierCounts["Low Risk"]}</strong>&nbsp;Low Risk states</div>
+      </div>
+      <p class="national-stats__note">National media coverage tracking AI infrastructure expansion, community opposition, and policy shifts across major publications.</p>
+    `;
     ui.panelRiskContext.style.display = "block";
   }
 
@@ -638,6 +844,16 @@ function bindUI() {
     adjustMapTop();
   });
 
+  /* Keyboard shortcuts: Escape closes methodology panel first, then main panel */
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (!ui.methodologyPanel?.classList.contains("methodology-panel--hidden")) {
+      ui.methodologyPanel?.classList.add("methodology-panel--hidden");
+    } else if (!ui.panel?.classList.contains("panel--hidden")) {
+      hidePanel();
+    }
+  });
+
   ui.viewStateBtn?.addEventListener("click", () => {
     currentViewMode = "state";
     ui.viewStateBtn?.classList.add("toggle__btn--active");
@@ -674,13 +890,30 @@ function bindUI() {
     el?.addEventListener("change", refreshCurrentPanel);
   });
 
+  /* Live search: show suggestions as user types */
+  ui.stateSearch?.addEventListener("input", () => {
+    const query = (ui.stateSearch.value || "").trim().toLowerCase();
+    if (query.length >= 1) {
+      showSearchSuggestions(query);
+    } else {
+      hideSearchSuggestions();
+    }
+  });
+
+  ui.stateSearch?.addEventListener("blur", () => {
+    /* Small delay so mousedown on a suggestion item fires first */
+    setTimeout(hideSearchSuggestions, 150);
+  });
+
+  /* Enter key: navigate directly */
   ui.stateSearch?.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
 
     const query = ui.stateSearch.value.trim().toLowerCase();
     if (!query) return;
+    hideSearchSuggestions();
 
-    if (query === "national" || query === "media coverage") {
+    if (query === "national" || query === "media coverage" || query === "overview") {
       ui.viewNationalBtn?.click();
       return;
     }
@@ -702,6 +935,7 @@ function bindUI() {
         setTimeout(() => ui.stateSearch.classList.remove("toolbar__input--no-match"), 1500);
       }
     }
+    if (ui.stateSearch) ui.stateSearch.value = "";
   });
 
   ui.clearFiltersBtn?.addEventListener("click", () => {
@@ -711,6 +945,7 @@ function bindUI() {
     if (ui.filterImpact) ui.filterImpact.value = "";
     if (ui.filterDirection) ui.filterDirection.value = "";
 
+    hideSearchSuggestions();
     hideHoverTooltip();
     refreshCurrentPanel();
   });
@@ -736,9 +971,7 @@ function bindUI() {
 
 /* ── Map initialisation ───────────────────────────────── */
 
-
 /* Clean up Mapbox base style labels + background */
-
 function applyMapStyle() {
   if (!map) return;
 
@@ -747,7 +980,6 @@ function applyMapStyle() {
   for (var i = 0; i < layers.length; i++) {
     var layer = layers[i];
 
-    /* State labels: remove block caps, clean font */
     if (layer.id === "state-label") {
       map.setLayoutProperty("state-label", "text-transform", "none");
       map.setLayoutProperty("state-label", "text-font", ["DIN Pro Medium", "Arial Unicode MS Regular"]);
@@ -758,7 +990,6 @@ function applyMapStyle() {
       map.setPaintProperty("state-label", "text-halo-width", 2);
     }
 
-    /* City / settlement labels */
     if (layer.id === "settlement-major-label" || layer.id === "settlement-minor-label" || layer.id === "settlement-subdivision-label") {
       map.setLayoutProperty(layer.id, "text-font", ["DIN Pro Regular", "Arial Unicode MS Regular"]);
       map.setLayoutProperty(layer.id, "text-size", 10);
@@ -767,7 +998,6 @@ function applyMapStyle() {
       map.setPaintProperty(layer.id, "text-halo-width", 1.5);
     }
 
-    /* Country labels */
     if (layer.id === "country-label") {
       map.setLayoutProperty(layer.id, "text-transform", "none");
       map.setLayoutProperty(layer.id, "text-font", ["DIN Pro Medium", "Arial Unicode MS Regular"]);
@@ -777,7 +1007,6 @@ function applyMapStyle() {
       map.setPaintProperty(layer.id, "text-halo-width", 1);
     }
 
-    /* Continent / area labels */
     if (layer.id === "continent-label" || layer.id === "natural-point-label" || layer.id === "natural-line-label" || layer.id === "water-point-label" || layer.id === "water-line-label") {
       map.setLayoutProperty(layer.id, "text-font", ["DIN Pro Regular", "Arial Unicode MS Regular"]);
       map.setPaintProperty(layer.id, "text-color", "#475569");
@@ -785,7 +1014,6 @@ function applyMapStyle() {
       map.setPaintProperty(layer.id, "text-halo-width", 1);
     }
 
-    /* Navy blue background: land */
     if (layer.id === "background") {
       map.setPaintProperty("background", "background-color", "#0F1E3D");
     }
@@ -794,12 +1022,10 @@ function applyMapStyle() {
       map.setPaintProperty(layer.id, "fill-color", "#0F1E3D");
     }
 
-    /* Navy blue background: water (darker) */
     if (layer.type === "fill" && (layer.id === "water" || layer.id.startsWith("water"))) {
       map.setPaintProperty(layer.id, "fill-color", "#091528");
     }
 
-    /* State / admin borders: subtle */
     if (layer.id.includes("admin") && layer.type === "line") {
       map.setPaintProperty(layer.id, "line-color", "rgba(148, 163, 184, 0.12)");
     }
@@ -828,7 +1054,6 @@ function initMap() {
 
   map.on("load", () => {
 
-    /* Apply navy background + clean label fonts */
     applyMapStyle();
 
     map.addSource("states", {
@@ -1051,6 +1276,9 @@ function initMap() {
 
     setLayerVisibility();
     clearStatus();
+
+    /* Read URL params after map is fully ready */
+    readUrlParams();
   });
 }
 
@@ -1112,6 +1340,7 @@ async function main() {
     bindUI();
     renderTopRiskStates();
     renderLastUpdated();
+    renderLegendStats();
 
     if (!statesData.length || !entriesData.length) {
       showStatus("Map geometry loaded, but /api/states or /api/entries returned no usable data. Base map should still render.", true);
