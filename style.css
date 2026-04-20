@@ -188,7 +188,7 @@ html, body {
   font-size: 12px;
   color: var(--muted);
   margin-top: 4px;
-  line-height: 1.35;
+  line-height: 1.5;
 }
 
 .panel__close {
@@ -238,6 +238,22 @@ html, body {
   background: #fff;
 }
 
+/* -- State rank context -- */
+.panel__rank {
+  font-size: 11px;
+  color: #64748B;
+  font-style: italic;
+}
+
+/* -- Entry header row (direction badge + year) -- */
+.entry__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+  flex-wrap: wrap;
+}
+
 /* -- Entry cards -- */
 .entry__title {
   font-size: 13px;
@@ -267,6 +283,38 @@ html, body {
   line-height: 1.45;
 }
 
+/* -- Entry year badge -- */
+.entry__year {
+  font-size: 10px;
+  font-weight: 500;
+  color: #94A3B8;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #F1F5F9;
+}
+
+.entry__year--new {
+  color: #B91C1C;
+  background: #FEF2F2;
+  font-weight: 700;
+}
+
+/* -- Signal direction badges -- */
+.dir-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  vertical-align: middle;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.dir-badge--neg     { background: #FEE2E2; color: #991B1B; }
+.dir-badge--pos     { background: #DCFCE7; color: #166534; }
+.dir-badge--neutral { background: #F1F5F9; color: #475569; }
+
 /* -- Risk context block -- */
 .panel__risk-context {
   font-size: 12px;
@@ -277,6 +325,29 @@ html, body {
   padding: 8px 12px;
   margin: 8px 16px 0;
   border-radius: 0 4px 4px 0;
+}
+
+/* -- National stats in panel -- */
+.national-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+
+.national-stats__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: #1E293B;
+}
+
+.national-stats__note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: #64748B;
+  line-height: 1.5;
 }
 
 /* -- Risk badges -- */
@@ -291,7 +362,7 @@ html, body {
 
 .risk-badge--high     { background: #FEE2E2; color: #991B1B; }
 .risk-badge--moderate { background: #FCE7E7; color: #9B2C2C; }
-.risk-badge--emerging { background: #FEF9C3; color: #854D0E; }
+.risk-badge--emerging { background: #FEF9C3; color: #854M0E; }
 .risk-badge--low      { background: #DCFCE7; color: #166534; }
 .risk-badge--national { background: #EFF6FF; color: #1D4ED8; }
 
@@ -333,6 +404,13 @@ html, body {
 .legend__label {
   font-size: 12px;
   font-weight: 600;
+}
+
+/* -- Legend tier count -- */
+.legend__count {
+  font-size: 10px;
+  color: #6B7280;
+  font-weight: 400;
 }
 
 .legend__range {
@@ -650,6 +728,38 @@ html, body {
   75%      { transform: translateX(4px); }
 }
 
+/* -- Live search suggestions dropdown -- */
+.search-suggestions {
+  position: fixed;
+  z-index: 1000;
+  background: #fff;
+  border: 1px solid rgba(17,24,39,.12);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(17,24,39,.16);
+  overflow: hidden;
+}
+
+.search-suggestions__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #111827;
+  transition: background 0.1s;
+}
+
+.search-suggestions__item:hover {
+  background: #F1F5F9;
+}
+
+.search-suggestions__name {
+  font-weight: 500;
+  flex: 1;
+}
+
 /* -- Status banner -- */
 #appStatus {
   display: none;
@@ -710,4 +820,6 @@ html, body {
 
   .mini-panel { display: none; }
   .floating-cta { bottom: 60px; }
+
+  .search-suggestions { max-width: calc(100vw - 24px); }
 }
