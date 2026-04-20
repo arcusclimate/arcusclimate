@@ -736,6 +736,76 @@ function bindUI() {
 
 /* ── Map initialisation ───────────────────────────────── */
 
+
+/* Clean up Mapbox base style labels + background */
+
+function applyMapStyle() {
+  if (!map) return;
+
+  var layers = map.getStyle().layers;
+
+  for (var i = 0; i < layers.length; i++) {
+    var layer = layers[i];
+
+    /* State labels: remove block caps, clean font */
+    if (layer.id === "state-label") {
+      map.setLayoutProperty("state-label", "text-transform", "none");
+      map.setLayoutProperty("state-label", "text-font", ["DIN Pro Medium", "Arial Unicode MS Regular"]);
+      map.setLayoutProperty("state-label", "text-size", 11);
+      map.setLayoutProperty("state-label", "text-letter-spacing", 0.05);
+      map.setPaintProperty("state-label", "text-color", "#CBD5E1");
+      map.setPaintProperty("state-label", "text-halo-color", "rgba(10, 20, 50, 0.9)");
+      map.setPaintProperty("state-label", "text-halo-width", 1.2);
+    }
+
+    /* City / settlement labels */
+    if (layer.id === "settlement-major-label" || layer.id === "settlement-minor-label" || layer.id === "settlement-subdivision-label") {
+      map.setLayoutProperty(layer.id, "text-font", ["DIN Pro Regular", "Arial Unicode MS Regular"]);
+      map.setLayoutProperty(layer.id, "text-size", 10);
+      map.setPaintProperty(layer.id, "text-color", "#94A3B8");
+      map.setPaintProperty(layer.id, "text-halo-color", "rgba(10, 20, 50, 0.8)");
+      map.setPaintProperty(layer.id, "text-halo-width", 1);
+    }
+
+    /* Country labels */
+    if (layer.id === "country-label") {
+      map.setLayoutProperty(layer.id, "text-transform", "none");
+      map.setLayoutProperty(layer.id, "text-font", ["DIN Pro Medium", "Arial Unicode MS Regular"]);
+      map.setLayoutProperty(layer.id, "text-size", 12);
+      map.setPaintProperty(layer.id, "text-color", "#64748B");
+      map.setPaintProperty(layer.id, "text-halo-color", "rgba(10, 20, 50, 0.8)");
+      map.setPaintProperty(layer.id, "text-halo-width", 1);
+    }
+
+    /* Continent / area labels */
+    if (layer.id === "continent-label" || layer.id === "natural-point-label" || layer.id === "natural-line-label" || layer.id === "water-point-label" || layer.id === "water-line-label") {
+      map.setLayoutProperty(layer.id, "text-font", ["DIN Pro Regular", "Arial Unicode MS Regular"]);
+      map.setPaintProperty(layer.id, "text-color", "#475569");
+      map.setPaintProperty(layer.id, "text-halo-color", "rgba(10, 20, 50, 0.7)");
+      map.setPaintProperty(layer.id, "text-halo-width", 1);
+    }
+
+    /* Navy blue background: land */
+    if (layer.id === "background") {
+      map.setPaintProperty("background", "background-color", "#0F1E3D");
+    }
+
+    if (layer.type === "fill" && (layer.id === "land" || layer.id === "landcover" || layer.id === "landuse")) {
+      map.setPaintProperty(layer.id, "fill-color", "#0F1E3D");
+    }
+
+    /* Navy blue background: water (darker) */
+    if (layer.type === "fill" && (layer.id === "water" || layer.id.startsWith("water"))) {
+      map.setPaintProperty(layer.id, "fill-color", "#091528");
+    }
+
+    /* State / admin borders: subtle */
+    if (layer.id.includes("admin") && layer.type === "line") {
+      map.setPaintProperty(layer.id, "line-color", "rgba(148, 163, 184, 0.12)");
+    }
+  }
+}
+
 function initMap() {
   if (!window.mapboxgl) {
     throw new Error("Mapbox GL JS did not load.");
@@ -757,6 +827,10 @@ function initMap() {
   map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right");
 
   map.on("load", () => {
+
+    /* Apply navy background + clean label fonts */
+    applyMapStyle();
+
     map.addSource("states", {
       type: "geojson",
       data: statesGeo,
@@ -873,7 +947,7 @@ function initMap() {
       },
       paint: {
         "text-color": "#E2E8F0",
-        "text-halo-color": "rgba(15,23,42,0.8)",
+        "text-halo-color": "rgba(10,20,50,0.8)",
         "text-halo-width": 1.5
       }
     });
