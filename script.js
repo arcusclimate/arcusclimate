@@ -253,7 +253,7 @@ function buildIndexes() {
 
     const gridRegions = Array.isArray(s.gridRegions)
       ? s.gridRegions
-      : (s.gridRegions ? [s.gridRegions] = []);
+      : (s.gridRegions ? [s.gridRegions] : []);
 
     const rec = {
       state: name,
