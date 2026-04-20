@@ -7,9 +7,6 @@ const DATA_URLS = {
   entriesApi: "./api/entries",
 };
 
-    /* Apply navy background, clean labels, move labels above fills */
-    applyMapStyle();
-
 const RISK_CONTEXT = {
   "High Risk": "This state faces compounding constraints across grid capacity, regulatory environment, and community opposition that make new data center siting costly, slow, or politically uncertain. Score <= -71.",
   "Moderate Risk": "This state has meaningful infrastructure or regulatory headwinds. Growth is possible but requires careful diligence on grid timelines, tariff exposure, and policy trajectory. Score -21 to -70.",
@@ -807,15 +804,6 @@ function applyMapStyle() {
       map.setPaintProperty(layer.id, "line-color", "rgba(148, 163, 184, 0.12)");
     }
   }
-
-  /* Move label layers above choropleth fills */
-  try {
-    map.moveLayer("state-label");
-    map.moveLayer("settlement-major-label");
-    map.moveLayer("settlement-minor-label");
-    map.moveLayer("settlement-subdivision-label");
-    map.moveLayer("country-label");
-  } catch(e) {}
 }
 
 function initMap() {
@@ -840,7 +828,8 @@ function initMap() {
 
   map.on("load", () => {
 
-
+    /* Apply navy background + clean label fonts */
+    applyMapStyle();
 
     map.addSource("states", {
       type: "geojson",
@@ -876,7 +865,7 @@ function initMap() {
           0.82
         ]
       }
-    });
+    }, "state-label");
 
     map.addLayer({
       id: "states-outline",
@@ -886,7 +875,7 @@ function initMap() {
         "line-color": "#475569",
         "line-width": 1
       }
-    });
+    }, "state-label");
 
     map.addLayer({
       id: "states-selected",
@@ -900,7 +889,7 @@ function initMap() {
           0
         ]
       }
-    });
+    }, "state-label");
 
     /* ── ISO / RTO layers ───────────────────────────── */
 
