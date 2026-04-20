@@ -25,7 +25,7 @@ html, body {
   top: 72px;
 }
 
-/* ── Top bar ─────────────────────────────────────────── */
+/* -- Top bar -- */
 .topbar {
   position: absolute;
   top: 0;
@@ -38,12 +38,12 @@ html, body {
   justify-content: space-between;
   gap: 14px;
   padding: 10px 14px;
-  background: linear-gradient(90deg, rgba(15,23,42,.97), rgba(15,23,42,.92));
+  background: linear-gradient(90deg, rgba(15,30,61,.97), rgba(15,30,61,.92));
   color: white;
   box-sizing: border-box;
 }
 
-/* ── Brand + logo ────────────────────────────────────── */
+/* -- Brand + logo -- */
 .brand {
   display: flex;
   align-items: center;
@@ -77,7 +77,7 @@ html, body {
   margin-top: 2px;
 }
 
-/* ── Toolbar ─────────────────────────────────────────── */
+/* -- Toolbar -- */
 .toolbar {
   display: flex;
   flex-wrap: nowrap;
@@ -129,7 +129,7 @@ html, body {
 .toolbar__row2 { display: none; }
 .toolbar__cta  { display: none; }
 
-/* ── View toggle ─────────────────────────────────────── */
+/* -- View toggle -- */
 .toggle {
   display: flex;
   border-radius: 10px;
@@ -153,7 +153,7 @@ html, body {
   color: #111827;
 }
 
-/* ── Side panel ──────────────────────────────────────── */
+/* -- Side panel -- */
 .panel {
   position: absolute;
   top: 88px;
@@ -238,7 +238,7 @@ html, body {
   background: #fff;
 }
 
-/* ── Entry cards ─────────────────────────────────────── */
+/* -- Entry cards -- */
 .entry__title {
   font-size: 13px;
   font-weight: 600;
@@ -267,7 +267,7 @@ html, body {
   line-height: 1.45;
 }
 
-/* ── Risk context block ──────────────────────────────── */
+/* -- Risk context block -- */
 .panel__risk-context {
   font-size: 12px;
   line-height: 1.6;
@@ -279,7 +279,7 @@ html, body {
   border-radius: 0 4px 4px 0;
 }
 
-/* ── Risk badges ─────────────────────────────────────── */
+/* -- Risk badges -- */
 .risk-badge {
   display: inline-block;
   font-size: 11px;
@@ -295,7 +295,7 @@ html, body {
 .risk-badge--low      { background: #DCFCE7; color: #166534; }
 .risk-badge--national { background: #EFF6FF; color: #1D4ED8; }
 
-/* ── Legend ───────────────────────────────────────────── */
+/* -- Legend -- */
 .legend {
   position: absolute;
   left: 14px;
@@ -358,7 +358,7 @@ html, body {
   margin-top: 8px;
 }
 
-/* ── Hover tooltip ───────────────────────────────────── */
+/* -- Hover tooltip -- */
 .hover-tooltip {
   position: absolute;
   z-index: 9999;
@@ -378,7 +378,7 @@ html, body {
 
 .hover-tooltip--hidden { display: none; }
 
-/* ── Mini panel (top 5 states) ───────────────────────── */
+/* -- Mini panel (top 5 states) -- */
 .mini-panel {
   position: absolute;
   right: 14px;
@@ -416,7 +416,7 @@ html, body {
   color: #111827;
 }
 
-/* ── Onboarding banner ───────────────────────────────── */
+/* -- Onboarding banner -- */
 .onboarding-banner {
   display: flex;
   align-items: center;
@@ -448,7 +448,7 @@ html, body {
 
 .onboarding-banner__close:hover { color: #fff; }
 
-/* ── Methodology panel ───────────────────────────────── */
+/* -- Methodology panel -- */
 .methodology-panel {
   position: fixed;
   top: 72px;
@@ -582,14 +582,14 @@ html, body {
 
 .methodology-panel__footer a { color: #3B8FE8; }
 
-/* ── Map footer ──────────────────────────────────────── */
+/* -- Map footer -- */
 .map-footer {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
   z-index: 5;
-  background: rgba(15,23,42,0.88);
+  background: rgba(15,30,61,0.88);
   backdrop-filter: blur(4px);
   border-top: 1px solid rgba(255,255,255,0.08);
   padding: 5px 16px;
@@ -607,7 +607,7 @@ html, body {
 
 .map-footer a:hover { text-decoration: underline; }
 
-/* ── Floating CTA ────────────────────────────────────── */
+/* -- Floating CTA -- */
 .floating-cta {
   position: fixed;
   bottom: 24px;
@@ -638,7 +638,7 @@ html, body {
 
 .floating-cta:active { transform: translateY(0); }
 
-/* ── Search feedback ─────────────────────────────────── */
+/* -- Search feedback -- */
 .toolbar__input--no-match {
   border-color: #EF4444 !important;
   animation: shake 0.3s ease-in-out;
@@ -650,7 +650,7 @@ html, body {
   75%      { transform: translateX(4px); }
 }
 
-/* ── Status banner ───────────────────────────────────── */
+/* -- Status banner -- */
 #appStatus {
   display: none;
   position: fixed;
@@ -667,7 +667,7 @@ html, body {
   font: 12px/1.4 inherit;
 }
 
-/* ── Mobile responsive ───────────────────────────────── */
+/* -- Mobile responsive -- */
 @media (max-width: 768px) {
   .topbar {
     flex-direction: column;
