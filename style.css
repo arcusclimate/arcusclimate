@@ -551,7 +551,7 @@ html, body {
 }
 
 .methodology-panel__badge {
-  background: #EFF6FF;
+  background: #EDF6FF;
   color: #1D4ED8;
   font-size: 10px;
   font-weight: 700;
@@ -822,4 +822,124 @@ html, body {
   .floating-cta { bottom: 60px; }
 
   .search-suggestions { max-width: calc(100vw - 24px); }
+}
+
+/* -- FIX #6: Top risk signal with parsed impact/year -- */
+.signal__text {
+  display: block;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #1E293B;
+}
+
+.signal__meta {
+  display: inline-block;
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: #94A3B8;
+  font-style: italic;
+}
+
+/* -- FIX #8: Copy link button in panel header -- */
+.panel__copy-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #F1F5F9;
+  border: 1px solid #E2E8F0;
+  border-radius: 6px;
+  color: #475569;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 4px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  line-height: 1;
+}
+
+.panel__copy-link:hover {
+  background: #E2E8F0;
+  color: #1E293B;
+}
+
+.panel__copy-link svg {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+/* -- FIX #10: Dataset stats in legend -- */
+.legend__data-stats {
+  margin-top: 8px;
+  font-size: 10px;
+  color: #94A3B8;
+  border-top: 1px solid rgba(17,24,39,.08);
+  padding-top: 8px;
+}
+
+/* -- FIX #11: External link icon on entry titles -- */
+.entry__ext-icon {
+  display: inline;
+  vertical-align: middle;
+  margin-left: 4px;
+  opacity: 0.45;
+  position: relative;
+  top: -1px;
+  flex-shrink: 0;
+}
+
+.panel__entries a:hover .entry__ext-icon {
+  opacity: 0.8;
+}
+
+/* -- FIX #16: Empty-state "Clear filters" inline CTA -- */
+.entries__empty-state {
+  color: #64748B;
+  font-size: 12.5px;
+  padding: 6px 0;
+  list-style: none;
+}
+
+.entries__clear-filters-link {
+  display: inline;
+  background: none;
+  border: none;
+  padding: 0;
+  color: #3B82F6;
+  font-size: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  font-family: inherit;
+}
+
+.entries__clear-filters-link:hover {
+  color: #1D4ED8;
+}
+
+/* -- FIX #17: Active filter count badge on Clear button -- */
+.has-active-filters::after {
+  content: attr(data-filter-count);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #EF4444;
+  color: #fff;
+  border-radius: 9999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-left: 5px;
+  line-height: 1;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+
+/* -- FIX #15: Arrow nav visual hint while panel open -- */
+@keyframes state-nav-flash {
+  0% { opacity: 1; }
+  50% { opacity: 0.6; }
+  100% { opacity: 1; }
 }
