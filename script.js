@@ -101,6 +101,21 @@ async function fetchJson(url, { optional = false, fallback = null } = {}) {
   }
 }
 
+/* FIX #2: GeoJSON uses browser caching (files are large and rarely change) */
+async function fetchGeoJson(url) {
+  try {
+    const res = await fetch(url); // no cache override — uses browser default
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("application/json") && !contentType.includes("geo+json")) {
+      return JSON.parse(await res.text());
+    }
+    return await res.json();
+  } catch (err) {
+    throw new Error(`Failed to load map geometry (${url}): ${err.message}`);
+  }
+}
+
 function normalizeStateName(value) {
   return String(value || "").trim();
 }
@@ -167,6 +182,13 @@ function hideHoverTooltip() {
   ui.hoverTooltip.classList.add("hover-tooltip--hidden");
 }
 
+/* FIX #6: Parse "Signal text — Impact Level — YYYY" into structured parts */
+function parseSignalString(raw) {
+  const m = String(raw || "").match(/^(.+?)\s+[—–-]{1,3}\s+(.+?)\s+[—–-]{1,3}\s+(\d{4})$/);
+  if (m) return { text: m[1].trim(), impact: m[2].trim(), year: m[3] };
+  return { text: String(raw || "").trim(), impact: null, year: null };
+}
+
 /* ── Signal direction helpers ─────────────────────────── */
 
 function getSignalDirectionMeta(direction) {
@@ -212,6 +234,14 @@ function syncUrl(context) {
   if (context.type === "state") params.set("state", context.value);
   else if (context.type === "iso") params.set("iso", context.value);
   else if (context.type === "national") params.set("view", "national");
+
+  /* FIX #7: Also persist active filters so shared URLs restore filter state */
+  const filters = getFilters();
+  if (filters.iso) params.set("f_iso", filters.iso);
+  if (filters.category) params.set("f_cat", filters.category);
+  if (filters.impact) params.set("f_impact", filters.impact);
+  if (filters.direction) params.set("f_dir", filters.direction);
+
   history.replaceState(null, "", `${window.location.pathname}?${params}`);
 }
 
@@ -220,6 +250,16 @@ function readUrlParams() {
   const state = params.get("state");
   const iso = params.get("iso");
   const view = params.get("view");
+
+  /* FIX #7: Restore filter state from URL */
+  const f_iso = params.get("f_iso");
+  const f_cat = params.get("f_cat");
+  const f_impact = params.get("f_impact");
+  const f_dir = params.get("f_dir");
+  if (f_iso && ui.filterIso) ui.filterIso.value = f_iso;
+  if (f_cat && ui.filterCategory) ui.filterCategory.value = f_cat;
+  if (f_impact && ui.filterImpact) ui.filterImpact.value = f_impact;
+  if (f_dir && ui.filterDirection) ui.filterDirection.value = f_dir;
 
   if (state && stateIndex.has(state)) {
     renderStatePanel(state);
@@ -240,7 +280,7 @@ function readUrlParams() {
   }
 }
 
-/* ── Data indexing ────────────────────────────────────── */
+/* ── Data indexing ─────────────────────���──────────────── */
 
 function buildIndexes() {
   stateIndex = new Map();
@@ -295,10 +335,12 @@ function buildIndexes() {
     entriesByState.get(state).push(entry);
   }
 
+  /* FIX #1: Sort by date newest-first (primary), then impactRank (secondary) */
   for (const [, list] of entriesByState.entries()) {
     list.sort((a, b) => {
-      if (a.impactRank !== b.impactRank) return a.impactRank - b.impactRank;
-      return new Date(b.publishedDate || 0) - new Date(a.publishedDate || 0);
+      const dateDiff = new Date(b.publishedDate || 0) - new Date(a.publishedDate || 0);
+      if (dateDiff !== 0) return dateDiff;
+      return a.impactRank - b.impactRank;
     });
   }
 }
@@ -307,7 +349,7 @@ function attachStateRiskToGeoJSON() {
   if (!statesGeo?.features?.length) return;
 
   statesGeo.features.forEach((feature) => {
-    const name = normalizeStateName(feature.properties?.NAME || feature.properties?.name || "");
+    const name = normalizeStateName(feature.properties?.NAME || feature.properties.name || "");
     const state = stateIndex.get(name);
 
     feature.properties = feature.properties || {};
@@ -321,7 +363,7 @@ function attachIsoRiskToGeoJSON() {
   if (!isoGeo?.features?.length) return;
 
   isoGeo.features.forEach((feature) => {
-    const isoName = (feature.properties?.iso || "").trim();
+    const isoName = (feature.properties?.iso||"").trim();
     const stateNames = isoToStates.get(isoName) || [];
 
     if (!stateNames.length) {
@@ -409,6 +451,56 @@ function getFilters() {
     impact: String(ui.filterImpact?.value || "").trim(),
     direction: String(ui.filterDirection?.value || "").trim(),
   };
+}
+
+/* FIX #14: Persist filter selections across page reloads */
+function saveFiltersToStorage() {
+  try {
+    localStorage.setItem("arcus_filters", JSON.stringify({
+      iso: ui.filterIso?.value || "",
+      category: ui.filterCategory?.value || "",
+      impact: ui.filterImpact?.value || "",
+      direction: ui.filterDirection?.value || "",
+    }));
+  } catch (_) {}
+}
+
+function loadFiltersFromStorage() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("arcus_filters") || "{}");
+    if (ui.filterIso && saved.iso) ui.filterIso.value = saved.iso;
+    if (ui.filterCategory && saved.category) ui.filterCategory.value = saved.category;
+    if (ui.filterImpact && saved.impact) ui.filterImpact.value = saved.impact;
+    if (ui.filterDirection && saved.direction) ui.filterDirection.value = saved.direction;
+  } catch (_) {}
+}
+
+/* FIX #17: Badge showing count of active filters on the Clear button */
+function updateFilterBadge() {
+  const count = [
+    ui.filterIso?.value, ui.filterCategory?.value,
+    ui.filterImpact?.value, ui.filterDirection?.value,
+  ].filter(Boolean).length;
+  if (!ui.clearFiltersBtn) return;
+  if (count > 0) {
+    ui.clearFiltersBtn.dataset.filterCount = count;
+    ui.clearFiltersBtn.classList.add("has-active-filters");
+  } else {
+    delete ui.clearFiltersBtn.dataset.filterCount;
+    ui.clearFiltersBtn.classList.remove("has-active-filters");
+  }
+}
+
+/* FIX #15: Arrow-key navigation through states while panel is open */
+function navigateState(direction) {
+  if (!currentContext || currentContext.type !== "state") return;
+  const focused = document.activeElement?.tagName;
+  if (focused === "INPUT" || focused === "SELECT" || focused === "TEXTAREA") return;
+  const states = [...stateIndex.keys()].filter((s) => s !== "National").sort();
+  const idx = states.indexOf(currentContext.value);
+  if (idx === -1) return;
+  const next = states[(idx + direction + states.length) % states.length];
+  renderStatePanel(next);
 }
 
 function entryMatchesFilters(entry, filters) {
@@ -527,9 +619,15 @@ function renderTopSignals(items) {
     return;
   }
 
+  /* FIX #6: Parse "text — Impact Level — YYYY" and display parts cleanly */
   items.forEach((item) => {
     const li = document.createElement("li");
-    li.textContent = item;
+    const parsed = parseSignalString(item);
+    const metaParts = [parsed.impact, parsed.year].filter(Boolean);
+    const metaHtml = metaParts.length
+      ? `<span class="signal__meta">${metaParts.join(" · ")}</span>`
+      : "";
+    li.innerHTML = `<span class="signal__text">${parsed.text}</span>${metaHtml}`;
     ui.panelTopSignals.appendChild(li);
   });
 }
@@ -541,7 +639,16 @@ function renderEntries(entries) {
 
   if (!entries.length) {
     ui.panelEntriesHint.textContent = "No matching resources.";
-    ui.panelEntries.innerHTML = "<li>No matching entries for the current filters.</li>";
+    /* FIX #16: Inline "Clear filters" CTA when active filters cause zero results */
+    const activeFilters = [
+      ui.filterIso?.value, ui.filterCategory?.value,
+      ui.filterImpact?.value, ui.filterDirection?.value,
+    ].filter(Boolean);
+    if (activeFilters.length) {
+      ui.panelEntries.innerHTML = `<li class="entries__empty-state">No entries match the active filters. <button class="entries__clear-filters-link" onclick="document.getElementById('clearFiltersBtn').click()">Clear filters</button></li>`;
+    } else {
+      ui.panelEntries.innerHTML = "<li>No matching entries for the current filters.</li>";
+    }
     return;
   }
 
@@ -550,8 +657,10 @@ function renderEntries(entries) {
   entries.forEach((entry) => {
     const li = document.createElement("li");
 
+    /* FIX #4: Dynamic "recent" threshold — current year, not hardcoded 2026 */
+    const currentYear = new Date().getFullYear();
     const year = entry.publishedDate ? new Date(entry.publishedDate).getFullYear() : "";
-    const isRecent = year && year >= 2026;
+    const isRecent = year && year >= currentYear;
     const yearLabel = year
       ? `<span class="${isRecent ? "entry__year entry__year--new" : "entry__year"}">${year}</span>`
       : "";
@@ -563,13 +672,20 @@ function renderEntries(entries) {
       .filter(Boolean)
       .join(" · ");
 
+    /* FIX #11: External link icon on article titles */
+    const linkHref = entry.link || "#";
+    const linkTarget = entry.link ? ' target="_blank" rel="noopener noreferrer"' : "";
+    const externalIcon = entry.link
+      ? `<svg class="entry__ext-icon" xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`
+      : "";
+
     li.innerHTML = `
       <div class="entry__header">
         ${dirBadge}
         ${yearLabel}
       </div>
       <div class="entry__title">
-        <a href="${entry.link || "#"}" target="_blank" rel="noopener noreferrer">${entry.title || "Untitled resource"}</a>
+        <a href="${linkHref}"${linkTarget}>${entry.title || "Untitled resource"}${externalIcon}</a>
       </div>
       <div class="entry__meta">${meta}</div>
       <div class="entry__summary">${entry.summary || ""}</div>
@@ -577,6 +693,9 @@ function renderEntries(entries) {
 
     ui.panelEntries.appendChild(li);
   });
+
+  /* FIX #13: Scroll entries back to top whenever a new panel is rendered */
+  if (ui.panelEntries) ui.panelEntries.scrollTop = 0;
 }
 
 function showPanel() {
@@ -639,11 +758,21 @@ function renderStatePanel(stateName) {
     ? `<span class="panel__rank">${ordinal(rankInfo.rank)} most constrained of ${rankInfo.total} states</span>`
     : "";
 
+  const filters = getFilters();
+  const entries = (entriesByState.get(stateName) || []).filter((e) => entryMatchesFilters(e, filters));
+
+  /* FIX #12: Show filtered signal count in meta, not stale API total */
+  const signalCount = entries.length;
+  const totalCount = state.entryCount ?? 0;
+  const countLabel = signalCount < totalCount
+    ? `${signalCount} of ${totalCount} signals`
+    : `${totalCount} signals`;
+
   if (ui.panelMeta) {
     ui.panelMeta.innerHTML = [
       riskBadge,
       Number.isFinite(state.riskScoreTotal) ? `Score: ${state.riskScoreTotal}` : "",
-      Number.isFinite(state.entryCount) ? `${state.entryCount} signals` : "",
+      countLabel,
       (state.gridRegions || []).length ? `ISO/RTO: ${state.gridRegions.join(", ")}` : "",
       rankLabel,
     ].filter(Boolean).join(" · ");
@@ -656,9 +785,6 @@ function renderStatePanel(stateName) {
   }
 
   renderTopSignals(state.topRiskSignals || []);
-
-  const filters = getFilters();
-  const entries = (entriesByState.get(stateName) || []).filter((e) => entryMatchesFilters(e, filters));
   renderEntries(entries);
   showPanel();
 
@@ -674,6 +800,29 @@ function renderStatePanel(stateName) {
     if (feature && feature.id !== undefined) {
       selectedStateId = feature.id;
       map.setFeatureState({ source: "states", id: selectedStateId }, { selected: true });
+    }
+
+    /* FIX #5: Fly map to the selected state's bounding box */
+    if (feature?.geometry) {
+      try {
+        const coords = feature.geometry.type === "MultiPolygon"
+          ? feature.geometry.coordinates.flat(3)
+          : feature.geometry.coordinates.flat(2);
+        const lngs = coords.filter((_, i) => i % 2 === 0);
+        const lats = coords.filter((_, i) => i % 2 === 1);
+        // flat(3) returns alternating [lng, lat] pairs — extract correctly
+        const pts = feature.geometry.type === "MultiPolygon"
+          ? feature.geometry.coordinates.flat(2)
+          : feature.geometry.coordinates.flat(1);
+        const allLng = pts.map(p => p[0]).filter(Number.isFinite);
+        const allLat = pts.map(p => p[1]).filter(Number.isFinite);
+        if (allLng.length && allLat.length) {
+          map.fitBounds(
+            [[Math.min(...allLng), Math.min(...allLat)], [Math.max(...allLng), Math.max(...allLat)]],
+            { padding: { top: 80, bottom: 80, left: 440, right: 60 }, maxZoom: 6.5, duration: 700 }
+          );
+        }
+      } catch (_) { /* don't break panel if geometry fails */ }
     }
   }
 }
@@ -696,7 +845,7 @@ function renderIsoPanel(isoName) {
   /* Aggregate risk for the ISO region */
   const stateScores = stateNames
     .map((name) => stateIndex.get(name)?.riskScoreTotal)
-    .filter((s) => Number.isFinite(s));
+    .filter(() => Number.isFinite(s));
   const avgScore = stateScores.length
     ? Math.round(stateScores.reduce((a, b) => a + b, 0) / stateScores.length)
     : 0;
@@ -839,18 +988,76 @@ function renderLastUpdated() {
 function bindUI() {
   ui.panelClose?.addEventListener("click", hidePanel);
 
+  /* FIX #8: Inject "Copy link" button into panel header */
+  const panelHeader = document.querySelector(".panel__header");
+  if (panelHeader && !document.getElementById("copyLinkBtn")) {
+    const copyBtn = document.createElement("button");
+    copyBtn.id = "copyLinkBtn";
+    copyBtn.className = "panel__copy-link";
+    copyBtn.title = "Copy shareable link";
+    copyBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Copy link`;
+    copyBtn.addEventListener("click", () => {
+      navigator.clipboard.writeText(window.location.href).then(() => {
+        copyBtn.textContent = "✓ Copied!";
+        setTimeout(() => {
+          copyBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Copy link`;
+        }, 1800);
+      }).catch(() => {
+        /* Fallback for browsers without clipboard API */
+        const ta = document.createElement("textarea");
+        ta.value = window.location.href;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        copyBtn.textContent = "✓ Copied!";
+        setTimeout(() => { copyBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Copy link`; }, 1800);
+      });
+    });
+    /* Insert before the close button */
+    const closeBtn = document.getElementById("panelClose");
+    if (closeBtn) panelHeader.insertBefore(copyBtn, closeBtn);
+    else panelHeader.appendChild(copyBtn);
+  }
+
+  /* FIX #10: Inject dataset-level stats into legend */
+  const legendEl = document.getElementById("legend");
+  if (legendEl && !document.getElementById("legendDataStats")) {
+    const totalEntries = [...entriesByState.values()].flat().length;
+    const totalStates = [...stateIndex.values()].filter(s => s.state !== "National").length;
+    const statsEl = document.createElement("div");
+    statsEl.id = "legendDataStats";
+    statsEl.className = "legend__data-stats";
+    statsEl.textContent = `${totalEntries} signals · ${totalStates} states tracked`;
+    legendEl.appendChild(statsEl);
+  }
+
   ui.onboardingClose?.addEventListener("click", () => {
     if (ui.onboardingBanner) ui.onboardingBanner.style.display = "none";
     adjustMapTop();
   });
 
-  /* Keyboard shortcuts: Escape closes methodology panel first, then main panel */
+  /* FIX #14: Restore persisted filters on load (URL params applied later will override) */
+  loadFiltersFromStorage();
+  updateFilterBadge();
+
+  /* Keyboard shortcuts: Escape closes panels; arrows cycle states */
   document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
-    if (!ui.methodologyPanel?.classList.contains("methodology-panel--hidden")) {
-      ui.methodologyPanel?.classList.add("methodology-panel--hidden");
-    } else if (!ui.panel?.classList.contains("panel--hidden")) {
-      hidePanel();
+    if (e.key === "Escape") {
+      if (!ui.methodologyPanel?.classList.contains("methodology-panel--hidden")) {
+        ui.methodologyPanel?.classList.add("methodology-panel--hidden");
+      } else if (!ui.panel?.classList.contains("panel--hidden")) {
+        hidePanel();
+      }
+      return;
+    }
+    /* FIX #15: Arrow-key navigation */
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+      e.preventDefault();
+      navigateState(1);
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+      e.preventDefault();
+      navigateState(-1);
     }
   });
 
@@ -887,7 +1094,11 @@ function bindUI() {
   });
 
   [ui.filterIso, ui.filterCategory, ui.filterImpact, ui.filterDirection].forEach((el) => {
-    el?.addEventListener("change", refreshCurrentPanel);
+    el?.addEventListener("change", () => {
+      saveFiltersToStorage();
+      updateFilterBadge();
+      refreshCurrentPanel();
+    });
   });
 
   /* Live search: show suggestions as user types */
@@ -945,6 +1156,8 @@ function bindUI() {
     if (ui.filterImpact) ui.filterImpact.value = "";
     if (ui.filterDirection) ui.filterDirection.value = "";
 
+    saveFiltersToStorage();
+    updateFilterBadge();
     hideSearchSuggestions();
     hideHoverTooltip();
     refreshCurrentPanel();
@@ -1315,9 +1528,19 @@ async function main() {
   try {
     showStatus("Loading map data...");
 
-    const [statesGeoRes, isoGeoRes, statesApiRes, entriesApiRes] = await Promise.all([
-      fetchJson(DATA_URLS.statesGeo),
-      fetchJson(DATA_URLS.isoGeo),
+    /* FIX #2 + #3: GeoJSON uses caching-friendly fetch; failures show user-friendly message */
+    let statesGeoRes, isoGeoRes;
+    try {
+      [statesGeoRes, isoGeoRes] = await Promise.all([
+        fetchGeoJson(DATA_URLS.statesGeo),
+        fetchGeoJson(DATA_URLS.isoGeo),
+      ]);
+    } catch (geoErr) {
+      showStatus(`Map geometry failed to load: ${geoErr.message}. Please refresh the page.`, true);
+      return;
+    }
+
+    const [statesApiRes, entriesApiRes] = await Promise.all([
       fetchJson(DATA_URLS.statesApi, { optional: true, fallback: [] }),
       fetchJson(DATA_URLS.entriesApi, { optional: true, fallback: [] }),
     ]);
