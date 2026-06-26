@@ -5,7 +5,35 @@ const DATA_URLS = {
   isoGeo: "./data/iso-rto.geojson",
   statesApi: "./api/states",
   entriesApi: "./api/entries",
+  tariffsApi: "./api/tariffs",
 };
+
+const TARIFF_STATUS_COLORS = {
+  "Enacted":                     "#4ade80",
+  "Pending Commission Approval": "#fbbf24",
+  "Proposed/Filed":              "#60a5fa",
+  "Under Development":           "#a78bfa",
+  "Withdrawn":                   "#f87171",
+};
+
+const RISK_FILL_EXPR = [
+  "match", ["get", "calculatedRiskLevel"],
+  "Low Risk",      "#A8D5BA",
+  "Emerging Risk", "#F3E6AE",
+  "Moderate Risk", "#F7C6C7",
+  "High Risk",     "#E57373",
+  "#1E293B"
+];
+
+const TARIFF_FILL_EXPR = [
+  "match", ["get", "tariffStatus"],
+  "Enacted",                     "#4ade80",
+  "Pending Commission Approval", "#fbbf24",
+  "Proposed/Filed",              "#60a5fa",
+  "Under Development",           "#a78bfa",
+  "Withdrawn",                   "#f87171",
+  "#1e2d3d"
+];
 
 const RISK_CONTEXT = {
   "High Risk": "This state faces compounding constraints across grid capacity, regulatory environment, and community opposition that make new data center siting costly, slow, or politically uncertain. Score <= -71.",
@@ -42,6 +70,7 @@ const ui = {
   viewStateBtn: document.getElementById("viewStateBtn"),
   viewIsoBtn: document.getElementById("viewIsoBtn"),
   viewNationalBtn: document.getElementById("viewNationalBtn"),
+  viewTariffBtn:   document.getElementById("viewTariffBtn"),
 };
 
 let map = null;
@@ -54,12 +83,15 @@ let entriesData = [];
 let stateIndex = new Map();
 let entriesByState = new Map();
 let isoToStates = new Map();
+let tariffByState = new Map();
 
 let currentViewMode = "state";
 let currentContext = null;
 let hoveredStateId = null;
 let hoveredIsoId = null;
 let selectedStateId = null;
+
+/* ── Utility helpers ──────────────────────────────────── */
 
 function showStatus(message, isError = false) {
   if (!ui.appStatus) return;
@@ -132,11 +164,26 @@ function fillSelect(el, values, placeholder) {
   });
 }
 
+function getTooltipYOffset() {
+  const banner = document.getElementById("onboardingBanner");
+  const bannerH = (banner && banner.offsetParent !== null) ? banner.offsetHeight : 0;
+  return 72 + bannerH + 16;
+}
+
+function adjustMapTop() {
+  const banner = document.getElementById("onboardingBanner");
+  const mapEl = document.getElementById("map");
+  if (!mapEl) return;
+  const bannerH = (banner && banner.offsetParent !== null) ? banner.offsetHeight : 0;
+  mapEl.style.top = `${72 + bannerH}px`;
+  if (map) map.resize();
+}
+
 function showHoverTooltip(x, y, html) {
   if (!ui.hoverTooltip) return;
   ui.hoverTooltip.innerHTML = html;
   ui.hoverTooltip.style.left = `${x + 16}px`;
-  ui.hoverTooltip.style.top = `${y + 88}px`;
+  ui.hoverTooltip.style.top = `${y + getTooltipYOffset()}px`;
   ui.hoverTooltip.style.display = "block";
   ui.hoverTooltip.classList.remove("hover-tooltip--hidden");
 }
@@ -146,6 +193,8 @@ function hideHoverTooltip() {
   ui.hoverTooltip.style.display = "none";
   ui.hoverTooltip.classList.add("hover-tooltip--hidden");
 }
+
+/* ── Data indexing ────────────────────────────────────── */
 
 function buildIndexes() {
   stateIndex = new Map();
@@ -208,19 +257,94 @@ function buildIndexes() {
   }
 }
 
+function buildTariffIndex(tariffsData) {
+  tariffByState = new Map();
+  for (const t of (tariffsData || [])) {
+    const name = normalizeStateName(t.state || t.State || "");
+    if (!name) continue;
+    if (!tariffByState.has(name)) tariffByState.set(name, []);
+    tariffByState.get(name).push({ status: t.status || t.Status || "None" });
+  }
+}
+
 function attachStateRiskToGeoJSON() {
   if (!statesGeo?.features?.length) return;
 
   statesGeo.features.forEach((feature) => {
     const name = normalizeStateName(feature.properties?.NAME || feature.properties?.name || "");
     const state = stateIndex.get(name);
+    const tariffs = tariffByState.get(name);
 
     feature.properties = feature.properties || {};
     feature.properties.calculatedRiskLevel = state?.calculatedRiskLevel || "No Data";
     feature.properties.riskScoreTotal = state?.riskScoreTotal ?? 0;
     feature.properties.entryCount = state?.entryCount ?? 0;
+    feature.properties.tariffStatus = tariffs?.[0]?.status || "None";
   });
 }
+
+function attachIsoRiskToGeoJSON() {
+  if (!isoGeo?.features?.length) return;
+
+  isoGeo.features.forEach((feature) => {
+    const isoName = (feature.properties?.iso || "").trim();
+    const stateNames = isoToStates.get(isoName) || [];
+
+    if (!stateNames.length) {
+      feature.properties.calculatedRiskLevel = "No Data";
+      feature.properties.avgRiskScore = 0;
+      return;
+    }
+
+    const scores = stateNames
+      .map((name) => stateIndex.get(name)?.riskScoreTotal)
+      .filter((s) => Number.isFinite(s));
+
+    const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+
+    let riskLevel;
+    if (avg <= -71) riskLevel = "High Risk";
+    else if (avg <= -21) riskLevel = "Moderate Risk";
+    else if (avg <= 4) riskLevel = "Emerging Risk";
+    else riskLevel = "Low Risk";
+
+    feature.properties.calculatedRiskLevel = riskLevel;
+    feature.properties.avgRiskScore = Math.round(avg);
+  });
+}
+
+function getIsoCentroids() {
+  return {
+    type: "FeatureCollection",
+    features: isoGeo.features.map((f) => {
+      const coords =
+        f.geometry.type === "MultiPolygon"
+          ? f.geometry.coordinates.flat(2)
+          : f.geometry.coordinates.flat(1);
+      let sumLng = 0,
+        sumLat = 0,
+        count = 0;
+      coords.forEach(([lng, lat]) => {
+        sumLng += lng;
+        sumLat += lat;
+        count++;
+      });
+      return {
+        type: "Feature",
+        properties: {
+          iso: f.properties.iso,
+          avgRiskScore: f.properties.avgRiskScore || 0,
+        },
+        geometry: {
+          type: "Point",
+          coordinates: [sumLng / count, sumLat / count],
+        },
+      };
+    }),
+  };
+}
+
+/* ── Filter helpers ───────────────────────────────────── */
 
 function fillFilters() {
   const allEntries = [...entriesByState.values()].flat();
@@ -272,6 +396,8 @@ function entryMatchesFilters(entry, filters) {
   return true;
 }
 
+/* ── Panel rendering ──────────────────────────────────── */
+
 function renderTopSignals(items) {
   if (!ui.panelTopSignals) return;
   ui.panelTopSignals.innerHTML = "";
@@ -322,10 +448,18 @@ function renderEntries(entries) {
 
 function showPanel() {
   if (ui.panel) ui.panel.classList.remove("panel--hidden");
+
+  /* Auto-hide the mini-panel so it doesn't overlap */
+  const miniPanel = document.getElementById("topRiskPanel");
+  if (miniPanel) miniPanel.classList.add("mini-panel--hidden");
 }
 
 function hidePanel() {
   if (ui.panel) ui.panel.classList.add("panel--hidden");
+
+  /* Restore mini-panel */
+  const miniPanel = document.getElementById("topRiskPanel");
+  if (miniPanel) miniPanel.classList.remove("mini-panel--hidden");
 
   if (map && selectedStateId !== null && map.getSource("states")) {
     map.setFeatureState({ source: "states", id: selectedStateId }, { selected: false });
@@ -353,7 +487,7 @@ function renderStatePanel(stateName) {
   const state = stateIndex.get(stateName);
   if (!state) return;
 
-  // Restore Top Risk Signals section if hidden by National view
+  /* Restore Top Risk Signals section if hidden by National view */
   if (ui.panelTopSignals?.parentElement) ui.panelTopSignals.parentElement.style.display = "";
 
   currentContext = { type: "state", value: stateName };
@@ -416,12 +550,37 @@ function renderIsoPanel(isoName) {
     .flatMap((state) => stateIndex.get(state)?.topRiskSignals || [])
     .slice(0, 8);
 
+  /* Aggregate risk for the ISO region */
+  const stateScores = stateNames
+    .map((name) => stateIndex.get(name)?.riskScoreTotal)
+    .filter((s) => Number.isFinite(s));
+  const avgScore = stateScores.length
+    ? Math.round(stateScores.reduce((a, b) => a + b, 0) / stateScores.length)
+    : 0;
+
+  let isoRiskLevel;
+  if (avgScore <= -71) isoRiskLevel = "High Risk";
+  else if (avgScore <= -21) isoRiskLevel = "Moderate Risk";
+  else if (avgScore <= 4) isoRiskLevel = "Emerging Risk";
+  else isoRiskLevel = "Low Risk";
+
   if (ui.panelTitle) ui.panelTitle.textContent = isoName;
-  if (ui.panelMeta) ui.panelMeta.innerHTML = `${stateNames.length} states · ${allEntries.length} signals`;
+
+  const riskBadge = `<span class="risk-badge ${getRiskBadgeClass(isoRiskLevel)}">${isoRiskLevel}</span>`;
+  if (ui.panelMeta) {
+    ui.panelMeta.innerHTML = `${riskBadge} Avg score: ${avgScore} · ${stateNames.length} states · ${allEntries.length} signals`;
+  }
 
   if (ui.panelRiskContext) {
-    ui.panelRiskContext.style.display = "none";
+    const context = RISK_CONTEXT[isoRiskLevel] || "";
+    ui.panelRiskContext.textContent = context
+      ? `Regional average across ${stateNames.length} states. ${context}`
+      : "";
+    ui.panelRiskContext.style.display = context ? "block" : "none";
   }
+
+  /* Restore Top Risk Signals section if hidden by National view */
+  if (ui.panelTopSignals?.parentElement) ui.panelTopSignals.parentElement.style.display = "";
 
   renderTopSignals(topSignals);
   renderEntries(allEntries);
@@ -453,7 +612,7 @@ function renderNationalPanel() {
   renderEntries(entries);
   showPanel();
 
-  // Deselect any highlighted state on the map
+  /* Deselect any highlighted state on the map */
   if (map && selectedStateId !== null && map.getSource("states")) {
     map.setFeatureState({ source: "states", id: selectedStateId }, { selected: false });
   }
@@ -467,6 +626,8 @@ function refreshCurrentPanel() {
   if (currentContext.type === "national") renderNationalPanel();
 }
 
+/* ── Map helpers ──────────────────────────────────────── */
+
 function safeSetFeatureState(source, id, state) {
   if (!map || id === undefined || id === null) return;
   if (!map.getSource(source)) return;
@@ -476,7 +637,7 @@ function safeSetFeatureState(source, id, state) {
 function setLayerVisibility() {
   if (!map) return;
 
-  const showStates = currentViewMode === "state";
+  const showStates = currentViewMode === "state" || currentViewMode === "tariff";
   const showIso = currentViewMode === "iso";
 
   if (map.getLayer("states-fill")) map.setLayoutProperty("states-fill", "visibility", showStates ? "visible" : "none");
@@ -484,6 +645,7 @@ function setLayerVisibility() {
   if (map.getLayer("states-selected")) map.setLayoutProperty("states-selected", "visibility", showStates ? "visible" : "none");
   if (map.getLayer("iso-fill")) map.setLayoutProperty("iso-fill", "visibility", showIso ? "visible" : "none");
   if (map.getLayer("iso-line")) map.setLayoutProperty("iso-line", "visibility", showIso ? "visible" : "none");
+  if (map.getLayer("iso-labels")) map.setLayoutProperty("iso-labels", "visibility", showIso ? "visible" : "none");
 }
 
 function renderLastUpdated() {
@@ -508,43 +670,136 @@ function renderLastUpdated() {
   })}`;
 }
 
+/* ── Tariff view helpers ──────────────────────────────── */
+
+let _legendOriginalHTML = null;
+
+function applyTariffMapColors() {
+  if (!map || !map.getLayer("states-fill")) return;
+  map.setPaintProperty("states-fill", "fill-color", TARIFF_FILL_EXPR);
+}
+
+function applyRiskMapColors() {
+  if (!map || !map.getLayer("states-fill")) return;
+  map.setPaintProperty("states-fill", "fill-color", RISK_FILL_EXPR);
+}
+
+function renderTariffLegend() {
+  const legend = document.getElementById("legend");
+  if (!legend) return;
+  // Cache original before replacing
+  if (!_legendOriginalHTML) _legendOriginalHTML = legend.innerHTML;
+
+  const counts = {};
+  let noneCount = 0;
+  for (const s of stateIndex.values()) {
+    if (s.state === "National") continue;
+    const tariffs = tariffByState.get(s.state);
+    const status = tariffs?.[0]?.status;
+    if (status && status !== "None") {
+      counts[status] = (counts[status] || 0) + 1;
+    } else {
+      noneCount++;
+    }
+  }
+
+  const statusOrder = [
+    "Enacted",
+    "Pending Commission Approval",
+    "Proposed/Filed",
+    "Under Development",
+    "Withdrawn",
+  ];
+
+  const rows = statusOrder
+    .filter(s => counts[s])
+    .map(s => `
+      <div class="legend__row">
+        <span class="legend__swatch" style="background:${TARIFF_STATUS_COLORS[s]};opacity:0.85"></span>
+        <span class="legend__label">${s} <span class="legend__count">(${counts[s]})</span></span>
+      </div>`)
+    .join("");
+
+  legend.innerHTML = `
+    <div class="legend__title">Large Load Tariff Status</div>
+    ${rows}
+    <div class="legend__row">
+      <span class="legend__swatch" style="background:#1e2d3d;border:1px solid #334155"></span>
+      <span class="legend__label">No Tariff <span class="legend__count">(${noneCount})</span></span>
+    </div>
+  `;
+}
+
+function restoreRiskLegend() {
+  const legend = document.getElementById("legend");
+  if (legend && _legendOriginalHTML && !legend.querySelector(".legend__range")) {
+    legend.innerHTML = _legendOriginalHTML;
+  }
+}
+
+/* ── UI bindings ──────────────────────────────────────── */
+
 function bindUI() {
   ui.panelClose?.addEventListener("click", hidePanel);
 
   ui.onboardingClose?.addEventListener("click", () => {
     if (ui.onboardingBanner) ui.onboardingBanner.style.display = "none";
+    adjustMapTop();
   });
 
   ui.viewStateBtn?.addEventListener("click", () => {
+    const wasTariff = currentViewMode === "tariff";
     currentViewMode = "state";
     ui.viewStateBtn?.classList.add("toggle__btn--active");
     ui.viewIsoBtn?.classList.remove("toggle__btn--active");
     ui.viewNationalBtn?.classList.remove("toggle__btn--active");
+    ui.viewTariffBtn?.classList.remove("toggle__btn--active");
     if (ui.panelTopSignals?.parentElement) ui.panelTopSignals.parentElement.style.display = "";
+    if (wasTariff) { applyRiskMapColors(); restoreRiskLegend(); }
     setLayerVisibility();
     hideHoverTooltip();
     hidePanel();
   });
 
   ui.viewIsoBtn?.addEventListener("click", () => {
+    const wasTariff = currentViewMode === "tariff";
     currentViewMode = "iso";
     ui.viewIsoBtn?.classList.add("toggle__btn--active");
     ui.viewStateBtn?.classList.remove("toggle__btn--active");
     ui.viewNationalBtn?.classList.remove("toggle__btn--active");
+    ui.viewTariffBtn?.classList.remove("toggle__btn--active");
     if (ui.panelTopSignals?.parentElement) ui.panelTopSignals.parentElement.style.display = "";
+    if (wasTariff) { applyRiskMapColors(); restoreRiskLegend(); }
     setLayerVisibility();
     hideHoverTooltip();
     hidePanel();
   });
 
   ui.viewNationalBtn?.addEventListener("click", () => {
+    const wasTariff = currentViewMode === "tariff";
     currentViewMode = "national";
     ui.viewNationalBtn?.classList.add("toggle__btn--active");
     ui.viewStateBtn?.classList.remove("toggle__btn--active");
     ui.viewIsoBtn?.classList.remove("toggle__btn--active");
+    ui.viewTariffBtn?.classList.remove("toggle__btn--active");
+    if (wasTariff) { applyRiskMapColors(); restoreRiskLegend(); }
     setLayerVisibility();
     hideHoverTooltip();
     renderNationalPanel();
+  });
+
+  ui.viewTariffBtn?.addEventListener("click", () => {
+    currentViewMode = "tariff";
+    ui.viewTariffBtn?.classList.add("toggle__btn--active");
+    ui.viewStateBtn?.classList.remove("toggle__btn--active");
+    ui.viewIsoBtn?.classList.remove("toggle__btn--active");
+    ui.viewNationalBtn?.classList.remove("toggle__btn--active");
+    if (ui.panelTopSignals?.parentElement) ui.panelTopSignals.parentElement.style.display = "";
+    setLayerVisibility();
+    applyTariffMapColors();
+    renderTariffLegend();
+    hideHoverTooltip();
+    hidePanel();
   });
 
   [ui.filterIso, ui.filterCategory, ui.filterImpact, ui.filterDirection].forEach((el) => {
@@ -564,10 +819,20 @@ function bindUI() {
 
     if (currentViewMode === "state" || currentViewMode === "national") {
       const match = [...stateIndex.keys()].find((name) => name.toLowerCase().includes(query) && name !== "National");
-      if (match) renderStatePanel(match);
+      if (match) {
+        renderStatePanel(match);
+      } else {
+        ui.stateSearch.classList.add("toolbar__input--no-match");
+        setTimeout(() => ui.stateSearch.classList.remove("toolbar__input--no-match"), 1500);
+      }
     } else {
       const match = [...isoToStates.keys()].find((name) => name.toLowerCase().includes(query));
-      if (match) renderIsoPanel(match);
+      if (match) {
+        renderIsoPanel(match);
+      } else {
+        ui.stateSearch.classList.add("toolbar__input--no-match");
+        setTimeout(() => ui.stateSearch.classList.remove("toolbar__input--no-match"), 1500);
+      }
     }
   });
 
@@ -589,7 +854,19 @@ function bindUI() {
   ui.methodologyClose?.addEventListener("click", () => {
     ui.methodologyPanel?.classList.add("methodology-panel--hidden");
   });
+
+  /* Mobile legend: tap to expand / collapse */
+  const legend = document.getElementById("legend");
+  if (legend) {
+    legend.addEventListener("click", () => {
+      if (window.innerWidth <= 768) {
+        legend.classList.toggle("legend--expanded");
+      }
+    });
+  }
 }
+
+/* ── Map initialisation ───────────────────────────────── */
 
 function initMap() {
   if (!window.mapboxgl) {
@@ -604,7 +881,7 @@ function initMap() {
 
   map = new mapboxgl.Map({
     container: "map",
-    style: "mapbox://styles/mapbox/light-v11",
+    style: "mapbox://styles/mapbox/dark-v11",
     center: [-97.5, 39.5],
     zoom: 3.4
   });
@@ -624,6 +901,8 @@ function initMap() {
       generateId: true
     });
 
+    /* ── State layers ───────────────────────────────── */
+
     map.addLayer({
       id: "states-fill",
       type: "fill",
@@ -636,12 +915,12 @@ function initMap() {
           "Emerging Risk", "#F3E6AE",
           "Moderate Risk", "#F7C6C7",
           "High Risk", "#E57373",
-          "#E5E7EB"
+          "#1E293B"
         ],
         "fill-opacity": [
           "case",
-          ["boolean", ["feature-state", "hover"], false], 0.9,
-          0.72
+          ["boolean", ["feature-state", "hover"], false], 0.92,
+          0.82
         ]
       }
     });
@@ -651,7 +930,7 @@ function initMap() {
       type: "line",
       source: "states",
       paint: {
-        "line-color": "#6B7280",
+        "line-color": "#475569",
         "line-width": 1
       }
     });
@@ -661,7 +940,7 @@ function initMap() {
       type: "line",
       source: "states",
       paint: {
-        "line-color": "#1A56DB",
+        "line-color": "#60A5FA",
         "line-width": [
           "case",
           ["boolean", ["feature-state", "selected"], false], 2.5,
@@ -669,6 +948,8 @@ function initMap() {
         ]
       }
     });
+
+    /* ── ISO / RTO layers ───────────────────────────── */
 
     map.addLayer({
       id: "iso-fill",
@@ -678,21 +959,17 @@ function initMap() {
       paint: {
         "fill-color": [
           "match",
-          ["get", "iso"],
-          "PJM", "#7FB3D5",
-          "MISO", "#A3BE8C",
-          "SPP", "#EBCB8B",
-          "ERCOT", "#D08770",
-          "CAISO", "#88C0D0",
-          "NYISO", "#B48EAD",
-          "ISO-NE", "#81A1C1",
-          "WECC", "#D8DEE9",
-          "#D1D5DB"
+          ["get", "calculatedRiskLevel"],
+          "Low Risk", "#A8D5BA",
+          "Emerging Risk", "#F3E6AE",
+          "Moderate Risk", "#F7C6C7",
+          "High Risk", "#E57373",
+          "#1E293B"
         ],
         "fill-opacity": [
           "case",
-          ["boolean", ["feature-state", "hover"], false], 0.30,
-          0.16
+          ["boolean", ["feature-state", "hover"], false], 0.45,
+          0.30
         ]
       }
     });
@@ -703,10 +980,37 @@ function initMap() {
       source: "iso",
       layout: { visibility: "none" },
       paint: {
-        "line-color": "#475569",
+        "line-color": "#94A3B8",
         "line-width": 1.8
       }
     });
+
+    /* ── ISO region labels ──────────────────────────── */
+
+    map.addSource("iso-labels", {
+      type: "geojson",
+      data: getIsoCentroids()
+    });
+
+    map.addLayer({
+      id: "iso-labels",
+      type: "symbol",
+      source: "iso-labels",
+      layout: {
+        visibility: "none",
+        "text-field": ["concat", ["get", "iso"], "\n", ["to-string", ["get", "avgRiskScore"]]],
+        "text-size": 13,
+        "text-font": ["DIN Pro Medium", "Arial Unicode MS Regular"],
+        "text-allow-overlap": true
+      },
+      paint: {
+        "text-color": "#E2E8F0",
+        "text-halo-color": "rgba(15,23,42,0.8)",
+        "text-halo-width": 1.5
+      }
+    });
+
+    /* ── State hover + click ────────────────────────── */
 
     map.on("mousemove", "states-fill", (e) => {
       const feature = e.features?.[0];
@@ -731,7 +1035,7 @@ function initMap() {
          Risk: ${state?.calculatedRiskLevel || "No Data"}<br>
          Score: ${state?.riskScoreTotal ?? 0}<br>
          Signals: ${state?.entryCount ?? 0}<br>
-         ISO/RTO: ${(state?.gridRegions || []).join(", ") || "—"}`
+         ISO/RTO: ${(state?.gridRegions || []).join(", ") || "\u2014"}`
       );
     });
 
@@ -749,6 +1053,8 @@ function initMap() {
       const stateName = normalizeStateName(feature.properties?.NAME || feature.properties?.name || "");
       renderStatePanel(stateName);
     });
+
+    /* ── ISO hover + click ──────────────────────────── */
 
     map.on("mousemove", "iso-fill", (e) => {
       const feature = e.features?.[0];
@@ -771,10 +1077,17 @@ function initMap() {
         .filter((entry) => entryMatchesFilters(entry, filters))
         .length;
 
+      const riskLevel = feature.properties?.calculatedRiskLevel || "No Data";
+      const avgScore = feature.properties?.avgRiskScore ?? 0;
+
       showHoverTooltip(
         e.point.x,
         e.point.y,
-        `<strong>${isoName}</strong><br>States: ${stateNames.length}<br>Signals: ${entryCount}`
+        `<strong>${isoName}</strong><br>
+         Risk: ${riskLevel}<br>
+         Avg Score: ${avgScore}<br>
+         States: ${stateNames.length}<br>
+         Signals: ${entryCount}`
       );
     });
 
@@ -798,6 +1111,8 @@ function initMap() {
     clearStatus();
   });
 }
+
+/* ── Sidebar widgets ──────────────────────────────────── */
 
 function renderTopRiskStates() {
   if (!ui.topRiskList) return;
@@ -824,15 +1139,18 @@ function renderTopRiskStates() {
   });
 }
 
+/* ── Bootstrap ────────────────────────────────────────── */
+
 async function main() {
   try {
     showStatus("Loading map data...");
 
-    const [statesGeoRes, isoGeoRes, statesApiRes, entriesApiRes] = await Promise.all([
+    const [statesGeoRes, isoGeoRes, statesApiRes, entriesApiRes, tariffsApiRes] = await Promise.all([
       fetchJson(DATA_URLS.statesGeo),
       fetchJson(DATA_URLS.isoGeo),
       fetchJson(DATA_URLS.statesApi, { optional: true, fallback: [] }),
       fetchJson(DATA_URLS.entriesApi, { optional: true, fallback: [] }),
+      fetchJson(DATA_URLS.tariffsApi, { optional: true, fallback: [] }),
     ]);
 
     statesGeo = statesGeoRes?.type === "FeatureCollection"
@@ -846,8 +1164,12 @@ async function main() {
     statesData = Array.isArray(statesApiRes) ? statesApiRes : (statesApiRes?.states || []);
     entriesData = Array.isArray(entriesApiRes) ? entriesApiRes : (entriesApiRes?.entries || []);
 
+    const tariffsData = Array.isArray(tariffsApiRes) ? tariffsApiRes : (tariffsApiRes?.tariffs || []);
+
     buildIndexes();
+    buildTariffIndex(tariffsData);
     attachStateRiskToGeoJSON();
+    attachIsoRiskToGeoJSON();
     fillFilters();
     bindUI();
     renderTopRiskStates();
@@ -858,6 +1180,7 @@ async function main() {
     }
 
     initMap();
+    adjustMapTop();
   } catch (err) {
     console.error(err);
     showStatus(err.message, true);
