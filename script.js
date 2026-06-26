@@ -263,7 +263,7 @@ function buildTariffIndex(tariffsData) {
     const name = normalizeStateName(t.state || t.State || "");
     if (!name) continue;
     if (!tariffByState.has(name)) tariffByState.set(name, []);
-    tariffByState.get(name).push({ status: t.status || t.Status || "None" });
+    tariffByState.get(name).push(t);
   }
 }
 
@@ -409,7 +409,7 @@ function renderTopSignals(items) {
 
   items.forEach((item) => {
     const li = document.createElement("li");
-    li.textContent = item;
+    li.textContent = typeof item === "string" ? item : (item?.label || item?.signal || item?.text || JSON.stringify(item));
     ui.panelTopSignals.appendChild(li);
   });
 }
@@ -476,6 +476,70 @@ function getRiskBadgeClass(riskLevel) {
     "Low Risk": "risk-badge--low",
   };
   return classes[riskLevel] || "";
+}
+
+function renderTariffPanel(stateName) {
+  const tariffs = tariffByState.get(stateName) || [];
+
+  currentContext = { type: "state", value: stateName };
+  if (ui.panelTitle) ui.panelTitle.textContent = stateName;
+  if (ui.panelMeta) ui.panelMeta.innerHTML = tariffs.length
+    ? `<span class="tariff-status tariff-status--${(tariffs[0].status || "").toLowerCase().replace(/[^a-z]/g, "-")}">Large Load Tariff · ${tariffs[0].status}</span>`
+    : `<span style="color:#94a3b8">No large load tariff on record</span>`;
+  if (ui.panelRiskContext) ui.panelRiskContext.style.display = "none";
+  if (ui.panelTopSignals?.parentElement) ui.panelTopSignals.parentElement.style.display = "none";
+
+  // Build tariff detail HTML
+  if (ui.panelEntries) {
+    if (!tariffs.length) {
+      ui.panelEntries.innerHTML = `<p style="color:#94a3b8;padding:16px 0">No large load tariff data available for ${stateName}.</p>`;
+    } else {
+      ui.panelEntries.innerHTML = tariffs.map(t => {
+        const statusClass = `tariff-status--${(t.status || "").toLowerCase().replace(/[^a-z]/g, "-")}`;
+        const rows = [
+          t.tariffName     && `<div class="tariff-detail-item"><strong>Program</strong><span>${t.tariffName}</span></div>`,
+          t.utility        && `<div class="tariff-detail-item"><strong>Utility</strong><span>${t.utility}</span></div>`,
+          t.mwThreshold    && `<div class="tariff-detail-item"><strong>MW Threshold</strong><span>≥${t.mwThreshold} MW</span></div>`,
+          t.effectiveDate  && `<div class="tariff-detail-item"><strong>Effective</strong><span>${t.effectiveDate}</span></div>`,
+          t.costAllocationMethod && `<div class="tariff-detail-item"><strong>Cost Allocation</strong><span>${t.costAllocationMethod}</span></div>`,
+        ].filter(Boolean).join("");
+
+        const provisions = t.keyProvisions
+          ? `<div class="tariff-provisions"><strong>Key Provisions</strong><p>${t.keyProvisions}</p></div>` : "";
+
+        const assessment = t.arcusAssessment
+          ? `<div class="tariff-assessment"><strong>Arcus Assessment</strong><p class="tariff-assessment-text">${t.arcusAssessment}</p></div>` : "";
+
+        const source = t.sourceUrl
+          ? `<a class="tariff-source-link" href="${t.sourceUrl}" target="_blank" rel="noopener">View Source Document ↗</a>` : "";
+
+        const verified = t.lastVerified
+          ? `<p style="color:#64748b;font-size:11px;margin-top:8px">Last verified: ${t.lastVerified}</p>` : "";
+
+        return `<div class="panel__section panel__section--tariff">
+          <div class="tariff-status ${statusClass}">${t.status || "Unknown"}</div>
+          <div class="tariff-details">${rows}</div>
+          ${provisions}${assessment}${source}${verified}
+        </div>`;
+      }).join("<hr style='border-color:rgba(255,255,255,0.08);margin:12px 0'>");
+    }
+  }
+
+  showPanel();
+
+  // Highlight the clicked state on the map
+  if (map && map.getSource("states")) {
+    if (selectedStateId !== null) {
+      map.setFeatureState({ source: "states", id: selectedStateId }, { selected: false });
+    }
+    const feature = statesGeo.features.find(
+      (f) => normalizeStateName(f.properties?.NAME || f.properties?.name || "") === stateName
+    );
+    if (feature && feature.id !== undefined) {
+      selectedStateId = feature.id;
+      map.setFeatureState({ source: "states", id: selectedStateId }, { selected: true });
+    }
+  }
 }
 
 function renderStatePanel(stateName) {
@@ -1051,7 +1115,11 @@ function initMap() {
       if (!feature) return;
 
       const stateName = normalizeStateName(feature.properties?.NAME || feature.properties?.name || "");
-      renderStatePanel(stateName);
+      if (currentViewMode === "tariff") {
+        renderTariffPanel(stateName);
+      } else {
+        renderStatePanel(stateName);
+      }
     });
 
     /* ── ISO hover + click ──────────────────────────── */
