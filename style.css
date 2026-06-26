@@ -656,6 +656,103 @@ html, body {
   75% { transform: translateX(4px); }
 }
 
+/* ── Tariff panel ─────────────────────────────────────────── */
+.tariff-card {
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.tariff-card--divider {
+  border-top: 2px solid var(--line);
+}
+.tariff-card__header {
+  margin-bottom: 12px;
+}
+.tariff-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+.tariff-badge--enacted            { background: #dcfce7; color: #166534; }
+.tariff-badge--pending-commission-approval { background: #fef9c3; color: #854d0e; }
+.tariff-badge--proposed-filed     { background: #dbeafe; color: #1e40af; }
+.tariff-badge--under-development  { background: #f3e8ff; color: #6b21a8; }
+.tariff-badge--withdrawn          { background: #fee2e2; color: #991b1b; }
+
+.tariff-card__details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.tariff-row {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.tariff-row__label {
+  flex-shrink: 0;
+  width: 110px;
+  color: var(--muted);
+  font-weight: 500;
+}
+.tariff-row__value {
+  color: #1f2937;
+  font-weight: 400;
+}
+.tariff-card__section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.tariff-card__section--assessment {
+  background: #f0f9ff;
+  border-left: 3px solid #0ea5e9;
+  border-radius: 0 6px 6px 0;
+  padding: 10px 12px;
+  margin-left: -2px;
+}
+.tariff-card__section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.tariff-card__text {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #374151;
+  margin: 0;
+}
+.tariff-card__source {
+  display: inline-block;
+  margin-top: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #1d4ed8;
+  text-decoration: none;
+}
+.tariff-card__source:hover { text-decoration: underline; }
+.tariff-card__verified {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #9ca3af;
+}
+.tariff-empty {
+  padding: 20px 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.panel__meta-no-data {
+  color: #9ca3af;
+  font-size: 12px;
+}
+
 /* ── Tariff view toggle button ───────────────────────────── */
 .toggle__btn--tariff-active {
   background: rgba(74, 222, 128, 0.15);
@@ -679,4 +776,236 @@ html, body {
 .legend__count {
   color: #64748b;
   font-weight: 400;
+}
+
+/* ── Compare modal ────────────────────────────────────── */
+.compare-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.compare-modal--hidden { display: none; }
+
+.compare-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 18, 40, 0.65);
+  backdrop-filter: blur(2px);
+}
+
+.compare-modal__panel {
+  position: relative;
+  z-index: 1;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0,0,0,.22);
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+}
+
+.compare-modal__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid #E5E7EB;
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 1;
+}
+
+.compare-modal__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+  flex-shrink: 0;
+}
+
+.compare-uc-toggle {
+  display: flex;
+  gap: 5px;
+  flex: 1;
+}
+
+.compare-modal__close {
+  background: none;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  color: #94A3B8;
+  cursor: pointer;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+.compare-modal__close:hover { color: #475569; }
+
+.compare-selectors {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-bottom: 1px solid #F1F5F9;
+}
+
+.compare-select {
+  flex: 1;
+  height: 36px;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #111827;
+  background: #F8FAFC;
+}
+.compare-select:focus { outline: 2px solid #3B82F6; border-color: transparent; }
+
+.compare-vs {
+  font-size: 13px;
+  font-weight: 700;
+  color: #94A3B8;
+  flex-shrink: 0;
+}
+
+.compare-body { padding: 14px 18px 18px; }
+
+.compare-prompt {
+  text-align: center;
+  color: #94A3B8;
+  font-size: 13px;
+  padding: 32px 0;
+  margin: 0;
+}
+
+.compare-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.compare-col {
+  background: #F8FAFC;
+  border: 1px solid #E5E7EB;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.compare-col--winner {
+  border-color: #3B82F6;
+  background: #EFF6FF;
+}
+
+.compare-col__name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1E293B;
+  margin-bottom: 5px;
+}
+
+.compare-col__star { color: #F59E0B; margin-left: 3px; }
+
+.compare-col__meta {
+  font-size: 11px;
+  color: #64748B;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.compare-col__verdict {
+  margin-bottom: 8px;
+  padding: 5px 8px;
+}
+
+.compare-col__bullets { margin: 0; padding: 0; }
+
+.compare-dims { margin-bottom: 14px; }
+
+.compare-dims__header {
+  display: grid;
+  grid-template-columns: 1fr 130px 1fr;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748B;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+  padding: 0 2px;
+}
+.compare-dims__header span:nth-child(2) { text-align: center; }
+.compare-dims__header span:last-child { text-align: right; }
+
+.compare-dim-row {
+  display: grid;
+  grid-template-columns: 1fr 130px 1fr;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 7px;
+}
+
+.compare-dim-label {
+  text-align: center;
+  font-size: 10.5px;
+  color: #64748B;
+}
+
+.compare-dim-a,
+.compare-dim-b {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.compare-dim-b { flex-direction: row-reverse; }
+
+.cmp-bar {
+  flex: 1;
+  height: 6px !important;
+}
+
+.compare-recommendation {
+  background: #F0F9FF;
+  border: 1px solid #BAE6FD;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  color: #0369A1;
+  line-height: 1.55;
+}
+.compare-rec__winner { font-weight: 700; }
+
+/* Compare button in panel header */
+.panel__compare-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #EFF6FF;
+  border: 1px solid #BFDBFE;
+  border-radius: 6px;
+  color: #1D4ED8;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  line-height: 1.4;
+  font-family: inherit;
+}
+.panel__compare-btn:hover {
+  background: #DBEAFE;
+  color: #1E40AF;
+}
+
+@media (max-width: 600px) {
+  .compare-cols { grid-template-columns: 1fr; }
+  .compare-dims { display: none; }
 }

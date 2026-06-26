@@ -456,6 +456,7 @@ function showPanel() {
 
 function hidePanel() {
   if (ui.panel) ui.panel.classList.add("panel--hidden");
+  document.getElementById("compareBtn")?.style.setProperty("display", "none");
 
   /* Restore mini-panel */
   const miniPanel = document.getElementById("topRiskPanel");
@@ -483,46 +484,72 @@ function renderTariffPanel(stateName) {
 
   currentContext = { type: "state", value: stateName };
   if (ui.panelTitle) ui.panelTitle.textContent = stateName;
-  if (ui.panelMeta) ui.panelMeta.innerHTML = tariffs.length
-    ? `<span class="tariff-status tariff-status--${(tariffs[0].status || "").toLowerCase().replace(/[^a-z]/g, "-")}">Large Load Tariff · ${tariffs[0].status}</span>`
-    : `<span style="color:#94a3b8">No large load tariff on record</span>`;
+
+  // Hide risk-specific sections
   if (ui.panelRiskContext) ui.panelRiskContext.style.display = "none";
   if (ui.panelTopSignals?.parentElement) ui.panelTopSignals.parentElement.style.display = "none";
+  const resourcesSection = document.getElementById("panelResourcesSection");
+  if (resourcesSection) resourcesSection.style.display = "none";
+  document.getElementById("compareBtn")?.style.setProperty("display", "none");
 
-  // Build tariff detail HTML
-  if (ui.panelEntries) {
-    if (!tariffs.length) {
-      ui.panelEntries.innerHTML = `<p style="color:#94a3b8;padding:16px 0">No large load tariff data available for ${stateName}.</p>`;
+  // Status badge in meta
+  if (ui.panelMeta) {
+    if (tariffs.length) {
+      const statusKey = (tariffs[0].status || "").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z-]/g, "");
+      ui.panelMeta.innerHTML = `<span class="tariff-badge tariff-badge--${statusKey}">${tariffs[0].status}</span>`;
     } else {
-      ui.panelEntries.innerHTML = tariffs.map(t => {
-        const statusClass = `tariff-status--${(t.status || "").toLowerCase().replace(/[^a-z]/g, "-")}`;
-        const rows = [
-          t.tariffName     && `<div class="tariff-detail-item"><strong>Program</strong><span>${t.tariffName}</span></div>`,
-          t.utility        && `<div class="tariff-detail-item"><strong>Utility</strong><span>${t.utility}</span></div>`,
-          t.mwThreshold    && `<div class="tariff-detail-item"><strong>MW Threshold</strong><span>≥${t.mwThreshold} MW</span></div>`,
-          t.effectiveDate  && `<div class="tariff-detail-item"><strong>Effective</strong><span>${t.effectiveDate}</span></div>`,
-          t.costAllocationMethod && `<div class="tariff-detail-item"><strong>Cost Allocation</strong><span>${t.costAllocationMethod}</span></div>`,
-        ].filter(Boolean).join("");
-
-        const provisions = t.keyProvisions
-          ? `<div class="tariff-provisions"><strong>Key Provisions</strong><p>${t.keyProvisions}</p></div>` : "";
-
-        const assessment = t.arcusAssessment
-          ? `<div class="tariff-assessment"><strong>Arcus Assessment</strong><p class="tariff-assessment-text">${t.arcusAssessment}</p></div>` : "";
-
-        const source = t.sourceUrl
-          ? `<a class="tariff-source-link" href="${t.sourceUrl}" target="_blank" rel="noopener">View Source Document ↗</a>` : "";
-
-        const verified = t.lastVerified
-          ? `<p style="color:#64748b;font-size:11px;margin-top:8px">Last verified: ${t.lastVerified}</p>` : "";
-
-        return `<div class="panel__section panel__section--tariff">
-          <div class="tariff-status ${statusClass}">${t.status || "Unknown"}</div>
-          <div class="tariff-details">${rows}</div>
-          ${provisions}${assessment}${source}${verified}
-        </div>`;
-      }).join("<hr style='border-color:rgba(255,255,255,0.08);margin:12px 0'>");
+      ui.panelMeta.innerHTML = `<span class="panel__meta-no-data">No large load tariff on record</span>`;
     }
+  }
+
+  // Build tariff cards directly above the hidden resources section
+  let tariffContainer = document.getElementById("tariffPanelContent");
+  if (!tariffContainer) {
+    tariffContainer = document.createElement("div");
+    tariffContainer.id = "tariffPanelContent";
+    resourcesSection?.parentElement?.insertBefore(tariffContainer, resourcesSection);
+  }
+  tariffContainer.style.display = "";
+
+  if (!tariffs.length) {
+    tariffContainer.innerHTML = `<div class="tariff-empty">No large load tariff data on record for ${stateName}.</div>`;
+  } else {
+    tariffContainer.innerHTML = tariffs.map((t, i) => {
+      const statusKey = (t.status || "").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z-]/g, "");
+
+      const detail = (label, value) => value
+        ? `<div class="tariff-row"><span class="tariff-row__label">${label}</span><span class="tariff-row__value">${value}</span></div>`
+        : "";
+
+      return `
+        <div class="tariff-card${i > 0 ? " tariff-card--divider" : ""}">
+          <div class="tariff-card__header">
+            <span class="tariff-badge tariff-badge--${statusKey}">${t.status || "Unknown"}</span>
+          </div>
+          <div class="tariff-card__details">
+            ${detail("Program", t.tariffName)}
+            ${detail("Utility", t.utility)}
+            ${detail("MW Threshold", t.mwThreshold ? `≥${t.mwThreshold} MW` : "")}
+            ${detail("Effective", t.effectiveDate)}
+            ${detail("Cost Allocation", t.costAllocationMethod)}
+          </div>
+          ${t.keyProvisions ? `
+          <div class="tariff-card__section">
+            <div class="tariff-card__section-title">Key Provisions</div>
+            <p class="tariff-card__text">${t.keyProvisions}</p>
+          </div>` : ""}
+          ${t.arcusAssessment ? `
+          <div class="tariff-card__section tariff-card__section--assessment">
+            <div class="tariff-card__section-title">Arcus Assessment</div>
+            <p class="tariff-card__text">${t.arcusAssessment}</p>
+          </div>` : ""}
+          ${t.sourceUrl ? `
+          <a class="tariff-card__source" href="${t.sourceUrl}" target="_blank" rel="noopener">
+            View regulatory source ↗
+          </a>` : ""}
+          ${t.lastVerified ? `<div class="tariff-card__verified">Last verified: ${t.lastVerified}</div>` : ""}
+        </div>`;
+    }).join("");
   }
 
   showPanel();
@@ -542,6 +569,165 @@ function renderTariffPanel(stateName) {
   }
 }
 
+function hideTariffPanel() {
+  const tariffContainer = document.getElementById("tariffPanelContent");
+  if (tariffContainer) tariffContainer.style.display = "none";
+  const resourcesSection = document.getElementById("panelResourcesSection");
+  if (resourcesSection) resourcesSection.style.display = "";
+  if (ui.panelTopSignals?.parentElement) ui.panelTopSignals.parentElement.style.display = "";
+  if (ui.panelRiskContext) ui.panelRiskContext.style.display = "";
+}
+
+/* ── Market comparison modal ─────────────────────────── */
+
+function createCompareModal() {
+  const modal = document.createElement("div");
+  modal.id = "compareModal";
+  modal.className = "compare-modal compare-modal--hidden";
+  modal.innerHTML = `
+    <div class="compare-modal__backdrop" id="compareBackdrop"></div>
+    <div class="compare-modal__panel">
+      <div class="compare-modal__header">
+        <span class="compare-modal__title">Compare Markets</span>
+        <div class="compare-uc-toggle" id="compareUcToggle">
+          <button class="uc-btn uc-btn--active" data-uc="mixed">Mixed</button>
+          <button class="uc-btn" data-uc="training">Training</button>
+          <button class="uc-btn" data-uc="inference">Inference</button>
+        </div>
+        <button class="compare-modal__close" id="compareClose">×</button>
+      </div>
+      <div class="compare-selectors">
+        <select class="compare-select" id="compareStateA"><option value="">Select a state…</option></select>
+        <span class="compare-vs">vs.</span>
+        <select class="compare-select" id="compareStateB"><option value="">Select a state…</option></select>
+      </div>
+      <div class="compare-body" id="compareBody"></div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  document.getElementById("compareBackdrop").addEventListener("click", closeCompareModal);
+  document.getElementById("compareClose").addEventListener("click", closeCompareModal);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCompareModal(); });
+
+  document.getElementById("compareUcToggle").addEventListener("click", (e) => {
+    const btn = e.target.closest(".uc-btn");
+    if (!btn) return;
+    document.querySelectorAll("#compareUcToggle .uc-btn").forEach(b => b.classList.toggle("uc-btn--active", b === btn));
+    renderCompareModal();
+  });
+
+  document.getElementById("compareStateA").addEventListener("change", renderCompareModal);
+  document.getElementById("compareStateB").addEventListener("change", renderCompareModal);
+}
+
+function closeCompareModal() {
+  document.getElementById("compareModal")?.classList.add("compare-modal--hidden");
+}
+
+function openCompareModal(prefilledState) {
+  if (!document.getElementById("compareModal")) createCompareModal();
+
+  const stateNames = [...stateIndex.keys()].filter(s => s !== "National").sort();
+  ["compareStateA", "compareStateB"].forEach(id => {
+    const sel = document.getElementById(id);
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">Select a state…</option>';
+    stateNames.forEach(name => {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+    if (prev) sel.value = prev;
+  });
+
+  if (prefilledState) document.getElementById("compareStateA").value = prefilledState;
+  document.getElementById("compareModal").classList.remove("compare-modal--hidden");
+  renderCompareModal();
+}
+
+function renderCompareModal() {
+  const body = document.getElementById("compareBody");
+  if (!body) return;
+
+  const stateA = document.getElementById("compareStateA")?.value;
+  const stateB = document.getElementById("compareStateB")?.value;
+  const uc = document.querySelector("#compareUcToggle .uc-btn--active")?.dataset?.uc || "mixed";
+
+  if (!stateA || !stateB) {
+    body.innerHTML = `<p class="compare-prompt">${!stateA && !stateB ? "Select two states above to compare." : `Select the ${!stateA ? "first" : "second"} state to continue.`}</p>`;
+    return;
+  }
+
+  const sA = stateIndex.get(stateA);
+  const sB = stateIndex.get(stateB);
+  if (!sA || !sB) return;
+
+  const vA = generateAdvisoryVerdict(sA, uc);
+  const vB = generateAdvisoryVerdict(sB, uc);
+
+  const winner = vA.normalizedScore > vB.normalizedScore ? stateA
+    : vB.normalizedScore > vA.normalizedScore ? stateB : null;
+
+  const winnerVerdict = winner === stateA ? vA : vB;
+  const weights = USE_CASES[uc]?.weights || USE_CASES.mixed.weights;
+  const bestDim = DIMENSIONS
+    .map(d => ({ ...d, ws: (winnerVerdict.scores[d.key] ?? 0) * (weights[d.key] ?? 1) }))
+    .sort((a, b) => b.ws - a.ws)[0];
+
+  const recommendationHtml = winner
+    ? `<div class="compare-recommendation"><span class="compare-rec__winner">${winner}</span> offers stronger conditions for <strong>${USE_CASES[uc].label}</strong> workloads — particularly on <strong>${bestDim.label}</strong>.</div>`
+    : `<div class="compare-recommendation">Both markets show comparable conditions for <strong>${USE_CASES[uc].label}</strong> workloads. Run site-specific diligence on both before committing.</div>`;
+
+  const colHtml = (stateName, verdict, sObj, isWinner) => {
+    const riskBadge = sObj.calculatedRiskLevel
+      ? `<span class="risk-badge ${getRiskBadgeClass(sObj.calculatedRiskLevel)}">${sObj.calculatedRiskLevel}</span>`
+      : "";
+    return `
+      <div class="compare-col ${isWinner ? "compare-col--winner" : ""}">
+        <div class="compare-col__name">${stateName}${isWinner ? ' <span class="compare-col__star">★</span>' : ""}</div>
+        <div class="compare-col__meta">${riskBadge} Score: ${sObj.riskScoreTotal ?? 0}</div>
+        <div class="advisory-verdict ${verdict.verdict.cls} compare-col__verdict">
+          <span class="advisory-verdict__label">${verdict.verdict.label}</span>
+        </div>
+        <ul class="advisory-bullets compare-col__bullets">${verdict.bullets.map(b => `<li>${b}</li>`).join("")}</ul>
+      </div>`;
+  };
+
+  const barHtml = (s, flip = false) => {
+    const leftPct  = s >= 0 ? 50 : Math.round(50 + s * 50);
+    const widthPct = Math.max(Math.round(Math.abs(s) * 50), 1);
+    const color    = s > 0.12 ? "#10B981" : s < -0.12 ? "#EF4444" : "#94A3B8";
+    const valStr   = `<span class="dim-score-val" style="color:${color};font-size:9px">${s >= 0 ? "+" : ""}${s.toFixed(2)}</span>`;
+    const bar      = `<div class="dim-bar-wrap cmp-bar"><div class="dim-bar-center"></div><div class="dim-bar-fill" style="left:${leftPct}%;width:${widthPct}%;background:${color}"></div></div>`;
+    return flip ? `${valStr}${bar}` : `${bar}${valStr}`;
+  };
+
+  const barsHtml = DIMENSIONS.map(d => {
+    const sAScore = vA.scores[d.key] ?? 0;
+    const sBScore = vB.scores[d.key] ?? 0;
+    return `
+      <div class="compare-dim-row">
+        <div class="compare-dim-a">${barHtml(sAScore)}</div>
+        <div class="compare-dim-label">${d.label}</div>
+        <div class="compare-dim-b">${barHtml(sBScore, true)}</div>
+      </div>`;
+  }).join("");
+
+  body.innerHTML = `
+    <div class="compare-cols">
+      ${colHtml(stateA, vA, sA, winner === stateA)}
+      ${colHtml(stateB, vB, sB, winner === stateB)}
+    </div>
+    <div class="compare-dims">
+      <div class="compare-dims__header">
+        <span>${stateA}</span><span>Dimension</span><span>${stateB}</span>
+      </div>
+      ${barsHtml}
+    </div>
+    ${recommendationHtml}`;
+}
+
 function renderStatePanel(stateName) {
   if (stateName === "National") {
     renderNationalPanel();
@@ -550,6 +736,8 @@ function renderStatePanel(stateName) {
 
   const state = stateIndex.get(stateName);
   if (!state) return;
+
+  hideTariffPanel();
 
   /* Restore Top Risk Signals section if hidden by National view */
   if (ui.panelTopSignals?.parentElement) ui.panelTopSignals.parentElement.style.display = "";
@@ -583,6 +771,7 @@ function renderStatePanel(stateName) {
   const entries = (entriesByState.get(stateName) || []).filter((e) => entryMatchesFilters(e, filters));
   renderEntries(entries);
   showPanel();
+  document.getElementById("compareBtn")?.style.setProperty("display", "");
 
   if (map && map.getSource("states")) {
     if (selectedStateId !== null) {
@@ -649,6 +838,7 @@ function renderIsoPanel(isoName) {
   renderTopSignals(topSignals);
   renderEntries(allEntries);
   showPanel();
+  document.getElementById("compareBtn")?.style.setProperty("display", "none");
 }
 
 function renderNationalPanel() {
@@ -675,6 +865,7 @@ function renderNationalPanel() {
 
   renderEntries(entries);
   showPanel();
+  document.getElementById("compareBtn")?.style.setProperty("display", "none");
 
   /* Deselect any highlighted state on the map */
   if (map && selectedStateId !== null && map.getSource("states")) {
@@ -927,6 +1118,23 @@ function bindUI() {
         legend.classList.toggle("legend--expanded");
       }
     });
+  }
+
+  /* Compare Markets button in panel header */
+  const panelHeader = document.querySelector(".panel__header");
+  if (panelHeader && !document.getElementById("compareBtn")) {
+    const compareBtn = document.createElement("button");
+    compareBtn.id = "compareBtn";
+    compareBtn.className = "panel__compare-btn";
+    compareBtn.title = "Compare with another market";
+    compareBtn.textContent = "⇄ Compare";
+    compareBtn.style.display = "none";
+    compareBtn.addEventListener("click", () => {
+      openCompareModal(currentContext?.type === "state" ? currentContext.value : null);
+    });
+    const closeBtn = document.getElementById("panelClose");
+    if (closeBtn) panelHeader.insertBefore(compareBtn, closeBtn);
+    else panelHeader.appendChild(compareBtn);
   }
 }
 
