@@ -1009,3 +1009,125 @@ html, body {
   .compare-cols { grid-template-columns: 1fr; }
   .compare-dims { display: none; }
 }
+
+/* ── Decision layer (advisory + use-case toggle) ────────── */
+.use-case-toggle {
+  display: flex;
+  gap: 5px;
+  padding: 10px 16px 0;
+}
+.uc-btn {
+  flex: 1;
+  padding: 5px 6px;
+  border: 1px solid #334155;
+  background: transparent;
+  color: #94A3B8;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  line-height: 1.4;
+}
+.uc-btn--active {
+  background: #1E293B;
+  border-color: #3B82F6;
+  color: #E2E8F0;
+}
+.uc-btn:hover:not(.uc-btn--active) {
+  background: #1a2840;
+  color: #CBD5E1;
+}
+
+.advisory-block {
+  padding: 8px 16px 12px;
+  border-bottom: 1px solid #E5E7EB;
+}
+.advisory-verdict {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #F8FAFC;
+  margin-bottom: 8px;
+}
+.advisory-verdict__label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.advisory-verdict__context {
+  font-size: 10.5px;
+  color: #94A3B8;
+}
+.verdict--go      .advisory-verdict__label { color: #059669; }
+.verdict--caution .advisory-verdict__label { color: #D97706; }
+.verdict--watch   .advisory-verdict__label { color: #EA580C; }
+.verdict--hold    .advisory-verdict__label { color: #DC2626; }
+
+.advisory-bullets {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 10px;
+}
+.advisory-bullets li {
+  font-size: 11.5px;
+  color: #475569;
+  padding: 2px 0 2px 14px;
+  position: relative;
+  line-height: 1.55;
+}
+.advisory-bullets li::before {
+  content: "›";
+  position: absolute;
+  left: 3px;
+  color: #94A3B8;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.dim-scores { display: flex; flex-direction: column; gap: 5px; }
+.dim-row {
+  display: grid;
+  grid-template-columns: 115px 1fr 38px;
+  align-items: center;
+  gap: 7px;
+}
+.dim-label {
+  font-size: 10px;
+  color: #94A3B8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dim-bar-wrap {
+  position: relative;
+  height: 5px;
+  background: #F1F5F9;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.dim-bar-center {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 1px;
+  height: 100%;
+  background: #CBD5E1;
+  z-index: 1;
+}
+.dim-bar-fill {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 3px;
+  transition: left 0.25s ease, width 0.25s ease;
+}
+.dim-score-val {
+  font-size: 9.5px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

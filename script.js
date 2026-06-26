@@ -1,5 +1,48 @@
 const MAPBOX_TOKEN = "pk.eyJ1IjoiYXJjdXNjbGltYXRlIiwiYSI6ImNtbWIzZTEydDBsdHIycW9ta2xtdGo3MWQifQ.KJVIx3qLHGebjYYAkuHRQg ";
 
+const DIMENSION_MAP = {
+  "Grid Capacity":            "grid",
+  "ISO / RTO":                "grid",
+  "Data Center Development":  "grid",
+  "Legislation / Regulation": "policy",
+  "Policy":                   "policy",
+  "Federal Action":           "policy",
+  "Moratorium":               "policy",
+  "Zoning":                   "policy",
+  "Affordability":            "economics",
+  "Energy Costs":             "economics",
+  "Incentive":                "economics",
+  "Clean Energy":             "cleanenergy",
+  "Clean Energy Procurement": "cleanenergy",
+  "Community Opposition":     "community",
+  "Water Use":                "community",
+};
+
+const DIMENSIONS = [
+  { key: "grid",        label: "Grid & Infrastructure" },
+  { key: "policy",      label: "Policy & Regulatory"   },
+  { key: "economics",   label: "Economics"              },
+  { key: "cleanenergy", label: "Clean Energy"           },
+  { key: "community",   label: "Community & Water"      },
+];
+
+const USE_CASES = {
+  mixed:    { label: "Mixed",     weights: { grid: 2.5, economics: 2.0, cleanenergy: 2.0, policy: 1.5, community: 1.0 } },
+  training: { label: "Training",  weights: { cleanenergy: 3.0, grid: 2.0, economics: 2.0, policy: 1.5, community: 1.0 } },
+  inference:{ label: "Inference", weights: { grid: 3.0, economics: 2.5, policy: 2.0, cleanenergy: 1.0, community: 1.0 } },
+};
+
+const VERDICTS = [
+  { min:  0.45, label: "Proceed",                cls: "verdict--go"      },
+  { min:  0.10, label: "Proceed with Diligence", cls: "verdict--caution" },
+  { min: -0.25, label: "Monitor Closely",        cls: "verdict--watch"   },
+  { min: -1.00, label: "Deep Diligence Required", cls: "verdict--hold"   },
+];
+
+const IMPACT_WEIGHT = { high: 2, medium: 1, low: 0.5 };
+
+let currentUseCase = "mixed";
+
 const DATA_URLS = {
   statesGeo: "./data/us-states.geojson",
   isoGeo: "./data/iso-rto.geojson",
@@ -137,7 +180,11 @@ function normalizeStateName(value) {
 
 function parseTopSignals(value) {
   if (!value) return [];
-  if (Array.isArray(value)) return value.filter(Boolean);
+  // Filter out Airtable formula error objects like { error: "#ERROR!" }
+  if (Array.isArray(value)) {
+    return value.filter(v => Boolean(v) && typeof v === "string");
+  }
+  if (typeof value === "object") return []; // single error object
   return String(value)
     .split(",")
     .map((v) => v.trim())
@@ -491,6 +538,8 @@ function renderTariffPanel(stateName) {
   const resourcesSection = document.getElementById("panelResourcesSection");
   if (resourcesSection) resourcesSection.style.display = "none";
   document.getElementById("compareBtn")?.style.setProperty("display", "none");
+  document.getElementById("useCaseToggle")?.style.setProperty("display", "none");
+  document.getElementById("advisoryBlock")?.style.setProperty("display", "none");
 
   // Status badge in meta
   if (ui.panelMeta) {
@@ -576,6 +625,135 @@ function hideTariffPanel() {
   if (resourcesSection) resourcesSection.style.display = "";
   if (ui.panelTopSignals?.parentElement) ui.panelTopSignals.parentElement.style.display = "";
   if (ui.panelRiskContext) ui.panelRiskContext.style.display = "";
+}
+
+/* ── Advisory block renderer ─────────────────────────── */
+
+function renderAdvisoryBlock(state, useCase) {
+  const el = document.getElementById("advisoryBlock");
+  if (!el) return;
+
+  const { verdict, scores, bullets } = generateAdvisoryVerdict(state, useCase);
+
+  const barsHtml = DIMENSIONS.map(d => {
+    const s = scores[d.key] ?? 0;
+    const leftPct  = s >= 0 ? 50 : Math.round(50 + s * 50);
+    const widthPct = Math.round(Math.abs(s) * 50);
+    const color    = s > 0.12 ? "#10B981" : s < -0.12 ? "#EF4444" : "#94A3B8";
+    return `<div class="dim-row">
+      <span class="dim-label">${d.label}</span>
+      <div class="dim-bar-wrap"><div class="dim-bar-center"></div><div class="dim-bar-fill" style="left:${leftPct}%;width:${Math.max(widthPct, 1)}%;background:${color}"></div></div>
+      <span class="dim-score-val" style="color:${color}">${s >= 0 ? "+" : ""}${s.toFixed(2)}</span>
+    </div>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div class="advisory-verdict ${verdict.cls}">
+      <span class="advisory-verdict__label">${verdict.label}</span>
+      <span class="advisory-verdict__context">· for ${USE_CASES[useCase].label} workloads</span>
+    </div>
+    <ul class="advisory-bullets">${bullets.map(b => `<li>${b}</li>`).join("")}</ul>
+    <div class="dim-scores">${barsHtml}</div>`;
+}
+
+/* ── Advisory scoring helpers ────────────────────────── */
+
+function computeDimensionScores(stateName) {
+  const entries = entriesByState.get(stateName) || [];
+  const raw   = { grid: 0, policy: 0, economics: 0, cleanenergy: 0, community: 0 };
+  const total = { grid: 0, policy: 0, economics: 0, cleanenergy: 0, community: 0 };
+
+  for (const e of entries) {
+    const dim = DIMENSION_MAP[e.category];
+    if (!dim) continue;
+    const iw  = IMPACT_WEIGHT[String(e.impactLevel || "").toLowerCase()] ?? 1;
+    const dir = String(e.signalDirection || "").toLowerCase();
+    let val = 0;
+    if (dir.includes("positive") || dir.includes("favorable") || dir.includes("opportunit")) val = 1;
+    else if (dir.includes("negative") || dir.includes("adverse") || dir.includes("warning") || dir.includes("risk")) val = -1;
+    raw[dim]   += val * iw;
+    total[dim] += iw;
+  }
+
+  const scores = {};
+  for (const dim of Object.keys(raw)) {
+    scores[dim] = total[dim] > 0 ? Math.max(-1, Math.min(1, raw[dim] / total[dim])) : 0;
+  }
+  return scores;
+}
+
+function getTopSignalForDim(stateName, dim, dir) {
+  const entries = entriesByState.get(stateName) || [];
+  const cats = Object.entries(DIMENSION_MAP).filter(([, d]) => d === dim).map(([c]) => c);
+  const relevant = entries.filter(e => {
+    if (!cats.includes(e.category)) return false;
+    const d = String(e.signalDirection || "").toLowerCase();
+    return dir === "negative"
+      ? d.includes("negative") || d.includes("adverse") || d.includes("warning") || d.includes("risk")
+      : d.includes("positive") || d.includes("favorable") || d.includes("opportunit");
+  });
+  relevant.sort((a, b) => {
+    const dd = new Date(b.publishedDate || 0) - new Date(a.publishedDate || 0);
+    return dd !== 0 ? dd : (a.impactRank || 999) - (b.impactRank || 999);
+  });
+  return { count: relevant.length, top: relevant[0] || null };
+}
+
+function signalCitation(count, top, dir) {
+  const yr  = top?.publishedDate ? new Date(top.publishedDate).getFullYear() : null;
+  const ttl = top?.title
+    ? (top.title.length > 70 ? top.title.slice(0, 67) + "…" : top.title)
+    : null;
+  const label = dir === "negative" ? "unfavorable" : "favorable";
+  if (!ttl) return `${count} ${label} signal${count !== 1 ? "s" : ""} flagged.`;
+  return `${count} ${label} signal${count !== 1 ? "s" : ""} — latest: "${ttl}"${yr ? ` (${yr})` : ""}.`;
+}
+
+function generateAdvisoryVerdict(state, useCase) {
+  const scores  = computeDimensionScores(state.state);
+  const weights = USE_CASES[useCase]?.weights || USE_CASES.mixed.weights;
+
+  let weightedSum = 0, weightTotal = 0;
+  for (const [dim, w] of Object.entries(weights)) {
+    weightedSum  += (scores[dim] ?? 0) * w;
+    weightTotal  += w;
+  }
+  const normalizedScore = weightTotal > 0 ? weightedSum / weightTotal : 0;
+  const verdict = VERDICTS.find(v => normalizedScore >= v.min) || VERDICTS[VERDICTS.length - 1];
+
+  const dimsByWeightedScore = DIMENSIONS
+    .map(d => ({ ...d, ws: (scores[d.key] ?? 0) * (weights[d.key] ?? 1), s: scores[d.key] ?? 0 }))
+    .sort((a, b) => a.ws - b.ws);
+
+  const bullets = [];
+  for (const dim of dimsByWeightedScore) {
+    if (bullets.length >= 2) break;
+    if (dim.s >= -0.1) continue;
+    const { count, top } = getTopSignalForDim(state.state, dim.key, "negative");
+    const cite = signalCitation(count, top, "negative");
+    if (dim.key === "grid")             bullets.push(useCase === "inference"
+      ? `Grid reliability constrained — ${cite}`
+      : `Interconnection queue bottleneck — ${cite}`);
+    else if (dim.key === "cleanenergy") bullets.push(`Carbon intensity elevated — ${cite}`);
+    else if (dim.key === "economics")   bullets.push(`Rate trajectory unfavorable — ${cite}`);
+    else if (dim.key === "policy")      bullets.push(`Regulatory environment in flux — ${cite}`);
+    else if (dim.key === "community")   bullets.push(`Community opposition flagged — ${cite}`);
+  }
+
+  if (bullets.length < 2 && normalizedScore > 0.3) {
+    const best = [...dimsByWeightedScore].reverse()[0];
+    const { count: pc, top: pt } = getTopSignalForDim(state.state, best.key, "positive");
+    const cite = signalCitation(pc, pt, "favorable");
+    if (best.key === "grid")             bullets.push(`Grid capacity favorable — ${cite}`);
+    else if (best.key === "cleanenergy") bullets.push(`Clean energy access strong — ${cite}`);
+    else if (best.key === "economics")   bullets.push(`Costs and incentives favorable — ${cite}`);
+    else if (best.key === "policy")      bullets.push(`Policy environment supportive — ${cite}`);
+    else if (best.key === "community")   bullets.push(`Community reception positive — ${cite}`);
+  }
+
+  if (!bullets.length) bullets.push("Conditions are mixed. Commission site-specific diligence before committing capital.");
+
+  return { verdict, normalizedScore, scores, bullets };
 }
 
 /* ── Market comparison modal ─────────────────────────── */
@@ -770,6 +948,13 @@ function renderStatePanel(stateName) {
   const filters = getFilters();
   const entries = (entriesByState.get(stateName) || []).filter((e) => entryMatchesFilters(e, filters));
   renderEntries(entries);
+
+  // Show advisory block + use-case toggle
+  const toggle = document.getElementById("useCaseToggle");
+  const advisory = document.getElementById("advisoryBlock");
+  if (toggle) toggle.style.display = "";
+  if (advisory) { advisory.style.display = ""; renderAdvisoryBlock(state, currentUseCase); }
+
   showPanel();
   document.getElementById("compareBtn")?.style.setProperty("display", "");
 
@@ -835,6 +1020,8 @@ function renderIsoPanel(isoName) {
   /* Restore Top Risk Signals section if hidden by National view */
   if (ui.panelTopSignals?.parentElement) ui.panelTopSignals.parentElement.style.display = "";
 
+  document.getElementById("useCaseToggle")?.style.setProperty("display", "none");
+  document.getElementById("advisoryBlock")?.style.setProperty("display", "none");
   renderTopSignals(topSignals);
   renderEntries(allEntries);
   showPanel();
@@ -863,6 +1050,8 @@ function renderNationalPanel() {
     ui.panelTopSignals.parentElement.style.display = "none";
   }
 
+  document.getElementById("useCaseToggle")?.style.setProperty("display", "none");
+  document.getElementById("advisoryBlock")?.style.setProperty("display", "none");
   renderEntries(entries);
   showPanel();
   document.getElementById("compareBtn")?.style.setProperty("display", "none");
@@ -1116,6 +1305,36 @@ function bindUI() {
     legend.addEventListener("click", () => {
       if (window.innerWidth <= 768) {
         legend.classList.toggle("legend--expanded");
+      }
+    });
+  }
+
+  /* Use-case toggle + advisory block below panelMeta */
+  if (ui.panelMeta && !document.getElementById("useCaseToggle")) {
+    const toggle = document.createElement("div");
+    toggle.id = "useCaseToggle";
+    toggle.className = "use-case-toggle";
+    toggle.style.display = "none";
+    toggle.innerHTML = `
+      <button class="uc-btn uc-btn--active" data-uc="mixed">Mixed</button>
+      <button class="uc-btn" data-uc="training">Training</button>
+      <button class="uc-btn" data-uc="inference">Inference</button>`;
+    ui.panelMeta.insertAdjacentElement("afterend", toggle);
+
+    const advisory = document.createElement("div");
+    advisory.id = "advisoryBlock";
+    advisory.className = "advisory-block";
+    advisory.style.display = "none";
+    toggle.insertAdjacentElement("afterend", advisory);
+
+    toggle.addEventListener("click", (e) => {
+      const btn = e.target.closest(".uc-btn");
+      if (!btn) return;
+      currentUseCase = btn.dataset.uc;
+      toggle.querySelectorAll(".uc-btn").forEach(b => b.classList.toggle("uc-btn--active", b === btn));
+      if (currentContext?.type === "state") {
+        const st = stateIndex.get(currentContext.value);
+        if (st) renderAdvisoryBlock(st, currentUseCase);
       }
     });
   }
