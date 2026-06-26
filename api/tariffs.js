@@ -9,22 +9,26 @@ export default async function handler(req, res) {
   try {
     const apiKey = envOrThrow("AIRTABLE_API_KEY");
     const baseId = envOrThrow("AIRTABLE_BASE_ID");
-    const tableName = process.env.AIRTABLE_TARIFFS_TABLE || "Tariffs";
-    const viewName = process.env.AIRTABLE_TARIFFS_VIEW || "Map API";
+    const tableName = process.env.AIRTABLE_TARIFFS_TABLE || "tblaGqx8ATslqyZ0h";
 
-    const records = await airtableList({ baseId, tableName, viewName, apiKey });
+    const records = await airtableList({ baseId, tableName, apiKey });
 
     const tariffs = records.map((record) => {
       const f = record.fields || {};
 
       return {
         id: record.id,
-        state: firstValue(f["State Name"]) || firstValue(f.State),
-        status: firstValue(f.Status) || firstValue(f["Tariff Status"]),
-        tariffName: firstValue(f["Tariff Name"]) || firstValue(f.Name) || "",
-        utility: firstValue(f.Utility) || "",
+        state: firstValue(f["State Name"]),
+        status: firstValue(f["Status"]),
+        tariffName: firstValue(f["Tariff Program Name"]) || "",
+        utility: firstValue(f["Utility Name"]) || "",
+        mwThreshold: f["MW Threshold"] || null,
         effectiveDate: firstValue(f["Effective Date"]) || "",
-        notes: firstValue(f.Notes) || "",
+        costAllocationMethod: firstValue(f["Cost Allocation Method"]) || "",
+        keyProvisions: firstValue(f["Key Provisions"]) || "",
+        arcusAssessment: firstValue(f["Arcus Assessment"]) || "",
+        sourceUrl: firstValue(f["Source URL"]) || "",
+        lastVerified: firstValue(f["Last Verified"]) || "",
       };
     });
 
