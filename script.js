@@ -130,6 +130,7 @@ let tariffByState = new Map();
 
 let currentViewMode = "state";
 let currentContext = null;
+let previousContext = null;
 let hoveredStateId = null;
 let hoveredIsoId = null;
 let selectedStateId = null;
@@ -503,7 +504,9 @@ function showPanel() {
 
 function hidePanel() {
   if (ui.panel) ui.panel.classList.add("panel--hidden");
+  previousContext = null;
   document.getElementById("compareBtn")?.style.setProperty("display", "none");
+  document.getElementById("panelBackBtn")?.style.setProperty("display", "none");
 
   /* Restore mini-panel */
   const miniPanel = document.getElementById("topRiskPanel");
@@ -919,6 +922,11 @@ function renderStatePanel(stateName) {
   const state = stateIndex.get(stateName);
   if (!state) return;
 
+  // Track where we came from so the back button can return there
+  if (currentContext && currentContext.type !== "state") {
+    previousContext = { ...currentContext };
+  }
+
   hideTariffPanel();
 
   /* Restore Top Risk Signals section if hidden by National view */
@@ -961,6 +969,10 @@ function renderStatePanel(stateName) {
 
   showPanel();
   document.getElementById("compareBtn")?.style.setProperty("display", "");
+
+  // Show back button if we came from somewhere
+  const backBtn = document.getElementById("panelBackBtn");
+  if (backBtn) backBtn.style.display = previousContext ? "" : "none";
 
   if (map && map.getSource("states")) {
     if (selectedStateId !== null) {
@@ -1036,6 +1048,8 @@ function renderIsoPanel(isoName) {
 }
 
 function renderNationalPanel() {
+  previousContext = null;
+  document.getElementById("panelBackBtn")?.style.setProperty("display", "none");
   currentContext = { type: "national", value: "National" };
 
   if (ui.panelTitle) ui.panelTitle.textContent = "US Market Overview";
@@ -1450,8 +1464,28 @@ function bindUI() {
     });
   }
 
-  /* Compare Markets button in panel header */
+  /* Back button in panel header */
   const panelHeader = document.querySelector(".panel__header");
+  if (panelHeader && !document.getElementById("panelBackBtn")) {
+    const backBtn = document.createElement("button");
+    backBtn.id = "panelBackBtn";
+    backBtn.className = "panel__back-btn";
+    backBtn.title = "Back";
+    backBtn.textContent = "← Back";
+    backBtn.style.display = "none";
+    backBtn.addEventListener("click", () => {
+      if (!previousContext) return;
+      const ctx = previousContext;
+      previousContext = null;
+      if (ctx.type === "national") renderNationalPanel();
+      else if (ctx.type === "iso") renderIsoPanel(ctx.value);
+    });
+    const closeBtn = document.getElementById("panelClose");
+    if (closeBtn) panelHeader.insertBefore(backBtn, closeBtn);
+    else panelHeader.appendChild(backBtn);
+  }
+
+  /* Compare Markets button in panel header */
   if (panelHeader && !document.getElementById("compareBtn")) {
     const compareBtn = document.createElement("button");
     compareBtn.id = "compareBtn";
