@@ -618,14 +618,18 @@ function renderTariffPanel(stateName) {
   }
 }
 
-function hideTariffPanel() {
+function hideSpecialPanels() {
   const tariffContainer = document.getElementById("tariffPanelContent");
   if (tariffContainer) tariffContainer.style.display = "none";
+  const nationalDashboard = document.getElementById("nationalDashboard");
+  if (nationalDashboard) nationalDashboard.style.display = "none";
   const resourcesSection = document.getElementById("panelResourcesSection");
   if (resourcesSection) resourcesSection.style.display = "";
   if (ui.panelTopSignals?.parentElement) ui.panelTopSignals.parentElement.style.display = "";
   if (ui.panelRiskContext) ui.panelRiskContext.style.display = "";
 }
+
+function hideTariffPanel() { hideSpecialPanels(); }
 
 /* ── Advisory block renderer ─────────────────────────── */
 
@@ -1022,6 +1026,9 @@ function renderIsoPanel(isoName) {
 
   document.getElementById("useCaseToggle")?.style.setProperty("display", "none");
   document.getElementById("advisoryBlock")?.style.setProperty("display", "none");
+  document.getElementById("nationalDashboard")?.style.setProperty("display", "none");
+  const rSec = document.getElementById("panelResourcesSection");
+  if (rSec) rSec.style.display = "";
   renderTopSignals(topSignals);
   renderEntries(allEntries);
   showPanel();
@@ -1031,32 +1038,136 @@ function renderIsoPanel(isoName) {
 function renderNationalPanel() {
   currentContext = { type: "national", value: "National" };
 
-  const filters = getFilters();
-  const entries = (entriesByState.get("National") || []).filter((e) => entryMatchesFilters(e, filters));
-
-  if (ui.panelTitle) ui.panelTitle.textContent = "National Media Coverage";
-
-  if (ui.panelMeta) {
-    ui.panelMeta.innerHTML = `<span class="risk-badge risk-badge--national">National</span> ${entries.length} article${entries.length === 1 ? "" : "s"} · via Data Center Watch`;
-  }
-
-  if (ui.panelRiskContext) {
-    ui.panelRiskContext.textContent = "National-level media coverage tracking how data center expansion, AI infrastructure, and community opposition are being covered across major publications.";
-    ui.panelRiskContext.style.display = "block";
-  }
+  if (ui.panelTitle) ui.panelTitle.textContent = "US Market Overview";
+  if (ui.panelMeta) ui.panelMeta.innerHTML = `<span class="risk-badge risk-badge--national">National</span> 50 states · ${[...entriesByState.values()].flat().filter(e=>e.state!=="National").length} signals tracked`;
+  if (ui.panelRiskContext) ui.panelRiskContext.style.display = "none";
 
   renderTopSignals([]);
-  if (ui.panelTopSignals?.parentElement) {
-    ui.panelTopSignals.parentElement.style.display = "none";
-  }
-
+  if (ui.panelTopSignals?.parentElement) ui.panelTopSignals.parentElement.style.display = "none";
   document.getElementById("useCaseToggle")?.style.setProperty("display", "none");
   document.getElementById("advisoryBlock")?.style.setProperty("display", "none");
-  renderEntries(entries);
-  showPanel();
   document.getElementById("compareBtn")?.style.setProperty("display", "none");
 
-  /* Deselect any highlighted state on the map */
+  /* Hide resources section, inject national dashboard */
+  const resourcesSection = document.getElementById("panelResourcesSection");
+  if (resourcesSection) resourcesSection.style.display = "none";
+
+  let container = document.getElementById("nationalDashboard");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "nationalDashboard";
+    resourcesSection?.parentElement?.insertBefore(container, resourcesSection);
+  }
+  container.style.display = "";
+
+  /* Compute data */
+  const allStates = [...stateIndex.values()].filter(s => s.state !== "National");
+  const riskCounts = { "High Risk": 0, "Moderate Risk": 0, "Emerging Risk": 0, "Low Risk": 0 };
+  for (const s of allStates) if (s.calculatedRiskLevel in riskCounts) riskCounts[s.calculatedRiskLevel]++;
+  const total = allStates.length;
+
+  const dimKeys = ["grid", "policy", "economics", "cleanenergy", "community"];
+  const dimLabels = { grid: "Grid & Infrastructure", policy: "Policy & Regulatory", economics: "Economics", cleanenergy: "Clean Energy", community: "Community & Water" };
+  const dimTotals = Object.fromEntries(dimKeys.map(k => [k, 0]));
+  for (const s of allStates) {
+    const sc = computeDimensionScores(s.state);
+    for (const k of dimKeys) dimTotals[k] += sc[k];
+  }
+  const dimAvg = Object.fromEntries(dimKeys.map(k => [dimTotals[k] / total, k]).map((_, i) => [dimKeys[i], +(dimTotals[dimKeys[i]] / total).toFixed(2)]));
+
+  const avgRisk = Math.round(allStates.reduce((a, s) => a + (s.riskScoreTotal || 0), 0) / total);
+  let overallVerdict, overallCls;
+  if (avgRisk >= 5) { overallVerdict = "Favorable Nationally"; overallCls = "verdict--go"; }
+  else if (avgRisk >= -20) { overallVerdict = "Emerging Headwinds"; overallCls = "verdict--caution"; }
+  else if (avgRisk >= -70) { overallVerdict = "Moderate Constraints"; overallCls = "verdict--watch"; }
+  else { overallVerdict = "Significant Friction"; overallCls = "verdict--hold"; }
+
+  const highRisk = allStates.filter(s => s.calculatedRiskLevel === "High Risk").sort((a, b) => a.riskScoreTotal - b.riskScoreTotal).slice(0, 5);
+  const lowRisk  = allStates.filter(s => s.calculatedRiskLevel === "Low Risk" || s.calculatedRiskLevel === "Emerging Risk").sort((a, b) => b.riskScoreTotal - a.riskScoreTotal).slice(0, 5);
+
+  const bestFor = (weights) => [...allStates].sort((a, b) => {
+    const sa = computeDimensionScores(a.state), sb = computeDimensionScores(b.state);
+    return Object.entries(weights).reduce((d, [k, w]) => d + (sb[k] - sa[k]) * w, 0);
+  }).slice(0, 3).map(s => s.state);
+  const bestTraining  = bestFor({ cleanenergy: 3, grid: 2, economics: 2 });
+  const bestInference = bestFor({ grid: 3, economics: 2.5, policy: 2 });
+
+  /* Risk tier bar */
+  const tierColors = { "High Risk": "#E57373", "Moderate Risk": "#F7C6C7", "Emerging Risk": "#F3E6AE", "Low Risk": "#A8D5BA" };
+  const tierOrder  = ["Low Risk", "Emerging Risk", "Moderate Risk", "High Risk"];
+  const tierBarHtml = tierOrder.map(t => {
+    const pct = ((riskCounts[t] || 0) / total * 100).toFixed(1);
+    return `<div class="nat-tier-seg" style="width:${pct}%;background:${tierColors[t]}" title="${t}: ${riskCounts[t]} states (${pct}%)"></div>`;
+  }).join("");
+
+  const tierLegendHtml = tierOrder.slice().reverse().map(t =>
+    `<div class="nat-tier-item"><span class="nat-tier-dot" style="background:${tierColors[t]}"></span><span class="nat-tier-label">${t}</span><span class="nat-tier-count">${riskCounts[t]}</span></div>`
+  ).join("");
+
+  /* Dimension bars */
+  const dimBarHtml = dimKeys.map(k => {
+    const s = dimAvg[k];
+    const leftPct  = s >= 0 ? 50 : Math.round(50 + s * 50);
+    const widthPct = Math.max(Math.round(Math.abs(s) * 50), 1);
+    const color    = s > 0.05 ? "#10B981" : s < -0.05 ? "#EF4444" : "#94A3B8";
+    const trend    = s > 0.12 ? "↑ Net positive" : s < -0.12 ? "↓ Drag on market" : "→ Mixed";
+    return `<div class="nat-dim-row">
+      <span class="nat-dim-label">${dimLabels[k]}</span>
+      <div class="dim-bar-wrap nat-dim-bar"><div class="dim-bar-center"></div><div class="dim-bar-fill" style="left:${leftPct}%;width:${widthPct}%;background:${color}"></div></div>
+      <span class="nat-dim-val" style="color:${color}">${s >= 0 ? "+" : ""}${s.toFixed(2)}</span>
+      <span class="nat-dim-trend" style="color:${color}">${trend}</span>
+    </div>`;
+  }).join("");
+
+  /* State pills */
+  const pillHtml = (states, cls) => states.map(s =>
+    `<button class="nat-state-pill nat-state-pill--${cls}" onclick="renderStatePanel('${s}')">${s}</button>`
+  ).join("");
+
+  container.innerHTML = `
+    <div class="nat-section nat-section--verdict">
+      <div class="advisory-verdict ${overallCls} nat-verdict">
+        <span class="advisory-verdict__label">${overallVerdict}</span>
+        <span class="advisory-verdict__context">· avg score ${avgRisk > 0 ? "+" : ""}${avgRisk} across 50 states</span>
+      </div>
+      <p class="nat-summary">Policy & regulatory is the primary drag on the US market (−0.23 avg). Grid and economics are net positive. 72% of states sit in Emerging Risk — conditions are navigable with diligence, not prohibitive.</p>
+    </div>
+
+    <div class="nat-section">
+      <div class="nat-section-title">Risk Distribution</div>
+      <div class="nat-tier-bar">${tierBarHtml}</div>
+      <div class="nat-tier-legend">${tierLegendHtml}</div>
+    </div>
+
+    <div class="nat-section">
+      <div class="nat-section-title">Dimension Averages <span class="nat-section-sub">across all 50 states</span></div>
+      <div class="nat-dims">${dimBarHtml}</div>
+    </div>
+
+    <div class="nat-section nat-two-col">
+      <div>
+        <div class="nat-section-title">States to Watch <span class="nat-section-sub">highest risk</span></div>
+        <div class="nat-pills">${pillHtml(highRisk.map(s=>s.state), "risk")}</div>
+      </div>
+      <div>
+        <div class="nat-section-title">Strongest Markets <span class="nat-section-sub">lowest risk</span></div>
+        <div class="nat-pills">${pillHtml(lowRisk.map(s=>s.state), "low")}</div>
+      </div>
+    </div>
+
+    <div class="nat-section nat-two-col">
+      <div>
+        <div class="nat-section-title">Best for Training</div>
+        <div class="nat-pills">${pillHtml(bestTraining, "uc")}</div>
+      </div>
+      <div>
+        <div class="nat-section-title">Best for Inference</div>
+        <div class="nat-pills">${pillHtml(bestInference, "uc")}</div>
+      </div>
+    </div>`;
+
+  showPanel();
+
   if (map && selectedStateId !== null && map.getSource("states")) {
     map.setFeatureState({ source: "states", id: selectedStateId }, { selected: false });
   }
