@@ -1525,6 +1525,21 @@ function initMap() {
   map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right");
 
   map.on("load", () => {
+    /* ── Override Mapbox default label styling ──────── */
+    // State labels: white, bold halo, full opacity
+    map.setPaintProperty("state-label", "text-color", "#FFFFFF");
+    map.setPaintProperty("state-label", "text-halo-color", "rgba(10,18,40,0.85)");
+    map.setPaintProperty("state-label", "text-halo-width", 2);
+    map.setPaintProperty("state-label", "text-opacity", 1);
+
+    // City/settlement labels: slightly off-white, same halo treatment
+    ["settlement-major-label", "settlement-minor-label", "settlement-subdivision-label"].forEach(id => {
+      map.setPaintProperty(id, "text-color", "#E2E8F0");
+      map.setPaintProperty(id, "text-halo-color", "rgba(10,18,40,0.8)");
+      map.setPaintProperty(id, "text-halo-width", 1.5);
+      map.setPaintProperty(id, "text-opacity", 0.9);
+    });
+
     map.addSource("states", {
       type: "geojson",
       data: statesGeo,
