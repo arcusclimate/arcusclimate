@@ -1526,19 +1526,24 @@ function initMap() {
 
   map.on("load", () => {
     /* ── Override Mapbox default label styling ──────── */
-    // State labels: white, bold halo, full opacity
-    map.setPaintProperty("state-label", "text-color", "#FFFFFF");
-    map.setPaintProperty("state-label", "text-halo-color", "rgba(10,18,40,0.85)");
-    map.setPaintProperty("state-label", "text-halo-width", 2);
-    map.setPaintProperty("state-label", "text-opacity", 1);
+    // State labels: refined, lightweight, minimal halo
+    map.setLayoutProperty("state-label", "text-font", ["DIN Pro Medium", "Arial Unicode MS Regular"]);
+    map.setLayoutProperty("state-label", "text-letter-spacing", 0.12);
+    map.setPaintProperty("state-label", "text-color", "#C8D8E8");
+    map.setPaintProperty("state-label", "text-halo-color", "rgba(8,15,32,0.6)");
+    map.setPaintProperty("state-label", "text-halo-width", 1);
+    map.setPaintProperty("state-label", "text-opacity", 0.85);
 
-    // City/settlement labels: slightly off-white, same halo treatment
-    ["settlement-major-label", "settlement-minor-label", "settlement-subdivision-label"].forEach(id => {
-      map.setPaintProperty(id, "text-color", "#E2E8F0");
-      map.setPaintProperty(id, "text-halo-color", "rgba(10,18,40,0.8)");
-      map.setPaintProperty(id, "text-halo-width", 1.5);
-      map.setPaintProperty(id, "text-opacity", 0.9);
+    // City labels: very subtle, don't compete with state names
+    ["settlement-major-label", "settlement-minor-label"].forEach(id => {
+      map.setPaintProperty(id, "text-color", "#7A8FA6");
+      map.setPaintProperty(id, "text-halo-color", "rgba(8,15,32,0.5)");
+      map.setPaintProperty(id, "text-halo-width", 0.5);
+      map.setPaintProperty(id, "text-opacity", 0.6);
     });
+
+    // Hide subdivision labels entirely — too noisy
+    map.setPaintProperty("settlement-subdivision-label", "text-opacity", 0);
 
     map.addSource("states", {
       type: "geojson",
