@@ -1235,7 +1235,7 @@ function renderLastUpdated() {
   const dates = [...stateIndex.values()]
     .map((s) => s.lastUpdated)
     .filter(Boolean)
-    .map((d) => new Date(d))
+    .map((d) => new Date(/^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d}T00:00:00` : d)) // date-only = local day, not UTC
     .filter((d) => !isNaN(d));
 
   if (!dates.length) {
