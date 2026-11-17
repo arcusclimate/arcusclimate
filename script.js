@@ -1096,6 +1096,18 @@ function renderNationalPanel() {
   else if (avgRisk >= -70) { overallVerdict = "Moderate Constraints"; overallCls = "verdict--watch"; }
   else { overallVerdict = "Significant Friction"; overallCls = "verdict--hold"; }
 
+  /* Summary sentence, computed from live data (was hard-coded) */
+  const fmtAvg = v => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(2)}`;
+  const dimSorted = [...dimKeys].sort((a, b) => dimAvg[a] - dimAvg[b]);
+  const dragKey = dimSorted[0];
+  const positives = dimKeys.filter(k => dimAvg[k] > 0.05).map(k => dimLabels[k].toLowerCase());
+  const topTier = Object.entries(riskCounts).sort((a, b) => b[1] - a[1])[0];
+  const topTierPct = Math.round((topTier[1] / total) * 100);
+  const natSummary =
+    `${dimLabels[dragKey]} is the biggest drag on the US market (${fmtAvg(dimAvg[dragKey])} avg). ` +
+    (positives.length ? `${positives.join(" and ").replace(/^./, c => c.toUpperCase())} ${positives.length > 1 ? "are" : "is"} net positive. ` : "No dimension is net positive. ") +
+    `${topTierPct}% of states sit in ${topTier[0]}.`;
+
   const highRisk = allStates.filter(s => s.calculatedRiskLevel === "High Risk").sort((a, b) => a.riskScoreTotal - b.riskScoreTotal).slice(0, 5);
   const lowRisk  = allStates.filter(s => s.calculatedRiskLevel === "Low Risk" || s.calculatedRiskLevel === "Emerging Risk").sort((a, b) => b.riskScoreTotal - a.riskScoreTotal).slice(0, 5);
 
@@ -1144,7 +1156,7 @@ function renderNationalPanel() {
         <span class="advisory-verdict__label">${overallVerdict}</span>
         <span class="advisory-verdict__context">· avg score ${avgRisk > 0 ? "+" : ""}${avgRisk} across 50 states</span>
       </div>
-      <p class="nat-summary">Policy & regulatory is the primary drag on the US market (−0.23 avg). Grid and economics are net positive. 72% of states sit in Emerging Risk — conditions are navigable with diligence, not prohibitive.</p>
+      <p class="nat-summary">${natSummary}</p>
     </div>
 
     <div class="nat-section">
