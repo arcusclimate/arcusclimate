@@ -21,7 +21,7 @@ const DIMENSION_MAP = {
 const DIMENSIONS = [
   { key: "grid",        label: "Grid & Infrastructure" },
   { key: "policy",      label: "Policy & Regulatory"   },
-  { key: "economics",   label: "Economics"              },
+  { key: "economics",   label: "Saturation & Costs"     },
   { key: "cleanenergy", label: "Clean Energy"           },
   { key: "community",   label: "Community & Water"      },
 ];
@@ -65,8 +65,60 @@ const RISK_FILL_EXPR = [
   "Emerging Risk", "#F3E6AE",
   "Moderate Risk", "#F7C6C7",
   "High Risk",     "#E57373",
+  "Limited Data",  "#D5DBE3",
   "#1E293B"
 ];
+
+/* ── Scoring (rubric v2, Nov 2026) ─────────────────────────
+   State score = sum over its signals of (entry score, capped at ±12)
+   × recency weight (halves every 12 months). Tiers come from that score.
+   A state with fewer than 3 signals is "Limited Data" unless one signal
+   alone moves it past a tier boundary (score ≤ −6 or ≥ +3). */
+const SCORING = {
+  halfLifeMonths: 12,
+  entryCap: 12,
+  minSignals: 3,
+  tiers: { high: -18, moderate: -6, low: 3 },
+};
+const TIER_RANGES = {
+  "High Risk": "Score ≤ −18",
+  "Moderate Risk": "Score −18 to −6",
+  "Emerging Risk": "Score −6 to +3",
+  "Low Risk": "Score ≥ +3",
+  "Limited Data": "Fewer than 3 signals",
+};
+const DIM_RANGE = { grid: 10, regulatory: 10, water: 10, clean: 5, saturation: 5 };
+
+function entryRawScore(e) {
+  const d = e.dims || {};
+  return (d.grid || 0) + (d.regulatory || 0) + (d.water || 0) + (d.clean || 0) + (d.saturation || 0);
+}
+
+function recencyWeight(dateStr) {
+  const t = Date.parse(dateStr || "");
+  if (!Number.isFinite(t)) return 0.25;
+  const months = Math.max(0, (Date.now() - t) / (1000 * 60 * 60 * 24 * 30.44));
+  return Math.pow(0.5, months / SCORING.halfLifeMonths);
+}
+
+function scoreEntries(entries) {
+  let total = 0;
+  for (const e of entries) {
+    const s = Math.max(-SCORING.entryCap, Math.min(SCORING.entryCap, entryRawScore(e)));
+    total += s * recencyWeight(e.publishedDate);
+  }
+  return Math.round(total * 10) / 10;
+}
+
+function tierForScore(score, signalCount) {
+  const t = SCORING.tiers;
+  if (!signalCount) return "Limited Data";
+  if (signalCount < SCORING.minSignals && score > t.moderate && score < t.low) return "Limited Data";
+  if (score <= t.high) return "High Risk";
+  if (score <= t.moderate) return "Moderate Risk";
+  if (score >= t.low) return "Low Risk";
+  return "Emerging Risk";
+}
 
 const TARIFF_FILL_EXPR = [
   "match", ["get", "tariffStatus"],
@@ -79,10 +131,11 @@ const TARIFF_FILL_EXPR = [
 ];
 
 const RISK_CONTEXT = {
-  "High Risk": "This state faces compounding constraints across grid capacity, regulatory environment, and community opposition that make new data center siting costly, slow, or politically uncertain. Score <= -71.",
-  "Moderate Risk": "This state has meaningful infrastructure or regulatory headwinds. Growth is possible but requires careful diligence on grid timelines, tariff exposure, and policy trajectory. Score -21 to -70.",
-  "Emerging Risk": "This state shows early warning signals. Current conditions are workable, but the risk profile is shifting as AI compute demand grows. Monitor grid, water, and legislative trends. Score -20 to +4.",
-  "Low Risk": "This state presents relatively favorable conditions for AI infrastructure siting, with supportive grid capacity, policy environment, and limited near-term constraint signals. Score >= +5.",
+  "High Risk": "Compounding constraints across grid capacity, regulation and community opposition make new data center siting costly, slow, or politically uncertain. Score ≤ −18.",
+  "Moderate Risk": "Meaningful infrastructure or regulatory headwinds. Growth is possible but needs careful diligence on grid timelines, tariff exposure and policy direction. Score −18 to −6.",
+  "Emerging Risk": "Early warning signals. Conditions are workable, but the risk profile is shifting as AI compute demand grows. Score −6 to +3.",
+  "Low Risk": "Relatively favorable conditions for AI infrastructure siting, with supportive policy and few near-term constraint signals. Score ≥ +3.",
+  "Limited Data": "Fewer than 3 tracked signals, and none strong enough on its own to support a rating. Treat as unrated, not as low risk.",
   "No Data": ""
 };
 
@@ -277,24 +330,41 @@ function buildIndexes() {
   }
 
   for (const e of entriesData) {
-    const state = normalizeStateName(e.state || e.State);
-    if (!state) continue;
+    const linked = (Array.isArray(e.states) && e.states.length ? e.states : [e.state || e.State])
+      .map((s) => normalizeStateName(s))
+      .filter(Boolean);
 
-    const entry = {
-      title: e.title || e.Title || "",
-      summary: e.summary || e.Summary || "",
-      link: e.link || e.Link || "",
-      publishedDate: e.publishedDate || e["Published Date"] || "",
-      state,
-      category: e.category || e["Category (linked)"] || e.Category || "",
-      impactLevel: e.impactLevel || e["Impact Level (linked)"] || e["Impact Level"] || "",
-      signalDirection: e.signalDirection || e["Signal Direction (linked)"] || e["Signal Direction"] || "",
-      impactRank: Number(e.impactRank ?? e["Impact Rank"] ?? 999),
-      sourceDomain: e.sourceDomain || e["Source Domain"] || "",
-    };
+    for (const state of [...new Set(linked)]) {
+      const entry = {
+        id: e.id,
+        title: e.title || e.Title || "",
+        summary: e.summary || e.Summary || "",
+        link: e.link || e.Link || "",
+        publishedDate: e.publishedDate || e["Published Date"] || "",
+        state,
+        category: e.category || e["Category (linked)"] || e.Category || "",
+        impactLevel: e.impactLevel || e["Impact Level (linked)"] || e["Impact Level"] || "",
+        signalDirection: e.signalDirection || e["Signal Direction (linked)"] || e["Signal Direction"] || "",
+        impactRank: Number(e.impactRank ?? e["Impact Rank"] ?? 999),
+        sourceDomain: e.sourceDomain || e["Source Domain"] || "",
+        dims: e.dims || null,
+      };
 
-    if (!entriesByState.has(state)) entriesByState.set(state, []);
-    entriesByState.get(state).push(entry);
+      if (!entriesByState.has(state)) entriesByState.set(state, []);
+      entriesByState.get(state).push(entry);
+    }
+  }
+
+  /* One score for everything: map color, panel verdict, ISO view and National panel
+     all read riskScoreTotal / calculatedRiskLevel computed here from the entries. */
+  const scored = entriesData.some((e) => e && e.dims);
+  if (scored) {
+    for (const [name, rec] of stateIndex.entries()) {
+      const list = (entriesByState.get(name) || []).filter((e) => e.dims);
+      rec.entryCount = list.length;
+      rec.riskScoreTotal = scoreEntries(list);
+      rec.calculatedRiskLevel = tierForScore(rec.riskScoreTotal, rec.entryCount);
+    }
   }
 
   for (const [, list] of entriesByState.entries()) {
@@ -344,21 +414,21 @@ function attachIsoRiskToGeoJSON() {
       return;
     }
 
-    const scores = stateNames
-      .map((name) => stateIndex.get(name)?.riskScoreTotal)
-      .filter((s) => Number.isFinite(s));
-
-    const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
-
-    let riskLevel;
-    if (avg <= -71) riskLevel = "High Risk";
-    else if (avg <= -21) riskLevel = "Moderate Risk";
-    else if (avg <= 4) riskLevel = "Emerging Risk";
-    else riskLevel = "Low Risk";
-
-    feature.properties.calculatedRiskLevel = riskLevel;
-    feature.properties.avgRiskScore = Math.round(avg);
+    const { avg, tier } = isoRisk(stateNames);
+    feature.properties.calculatedRiskLevel = tier;
+    feature.properties.avgRiskScore = avg;
   });
+}
+
+/* ISO/RTO risk = average score of its member states that have a rating
+   (Limited Data states are left out of the average). */
+function isoRisk(stateNames) {
+  const rated = stateNames
+    .map((name) => stateIndex.get(name))
+    .filter((s) => s && Number.isFinite(s.riskScoreTotal) && s.calculatedRiskLevel !== "Limited Data");
+  if (!rated.length) return { avg: 0, tier: "Limited Data" };
+  const avg = Math.round((rated.reduce((a, s) => a + s.riskScoreTotal, 0) / rated.length) * 10) / 10;
+  return { avg, tier: tierForScore(avg, SCORING.minSignals) };
 }
 
 function getIsoCentroids() {
@@ -525,6 +595,7 @@ function getRiskBadgeClass(riskLevel) {
     "Moderate Risk": "risk-badge--moderate",
     "Emerging Risk": "risk-badge--emerging",
     "Low Risk": "risk-badge--low",
+    "Limited Data": "risk-badge--limited",
   };
   return classes[riskLevel] || "";
 }
@@ -665,8 +736,26 @@ function renderAdvisoryBlock(state, useCase) {
 
 /* ── Advisory scoring helpers ────────────────────────── */
 
+/* Panel dimension bars come from the same per-signal scores as the map color:
+   recency-weighted average of each dimension, scaled to −1..+1 by its range. */
+const PANEL_DIM_SOURCE = { grid: "grid", policy: "regulatory", economics: "saturation", cleanenergy: "clean", community: "water" };
+
 function computeDimensionScores(stateName) {
   const entries = entriesByState.get(stateName) || [];
+  const scoredEntries = entries.filter((e) => e.dims);
+  if (scoredEntries.length) {
+    const out = {};
+    let wTotal = 0;
+    for (const e of scoredEntries) wTotal += recencyWeight(e.publishedDate);
+    for (const [panelKey, dimKey] of Object.entries(PANEL_DIM_SOURCE)) {
+      let s = 0;
+      for (const e of scoredEntries) s += (e.dims[dimKey] || 0) * recencyWeight(e.publishedDate);
+      const v = wTotal > 0 ? s / (wTotal * DIM_RANGE[dimKey]) : 0;
+      out[panelKey] = Math.max(-1, Math.min(1, v * 3)); // ×3 so a typical signal (≈⅓ of range) reads as a full bar
+    }
+    return out;
+  }
+
   const raw   = { grid: 0, policy: 0, economics: 0, cleanenergy: 0, community: 0 };
   const total = { grid: 0, policy: 0, economics: 0, cleanenergy: 0, community: 0 };
 
@@ -726,7 +815,16 @@ function generateAdvisoryVerdict(state, useCase) {
     weightTotal  += w;
   }
   const normalizedScore = weightTotal > 0 ? weightedSum / weightTotal : 0;
-  const verdict = VERDICTS.find(v => normalizedScore >= v.min) || VERDICTS[VERDICTS.length - 1];
+  /* The verdict follows the map tier so the panel can never contradict the color. */
+  const TIER_VERDICT = {
+    "High Risk": VERDICTS[3],
+    "Moderate Risk": VERDICTS[2],
+    "Emerging Risk": VERDICTS[1],
+    "Low Risk": VERDICTS[0],
+    "Limited Data": { label: "Insufficient Data", cls: "verdict--watch" },
+  };
+  const verdict = TIER_VERDICT[state.calculatedRiskLevel]
+    || VERDICTS.find(v => normalizedScore >= v.min) || VERDICTS[VERDICTS.length - 1];
 
   const dimsByWeightedScore = DIMENSIONS
     .map(d => ({ ...d, ws: (scores[d.key] ?? 0) * (weights[d.key] ?? 1), s: scores[d.key] ?? 0 }))
@@ -1005,18 +1103,7 @@ function renderIsoPanel(isoName) {
     .slice(0, 8);
 
   /* Aggregate risk for the ISO region */
-  const stateScores = stateNames
-    .map((name) => stateIndex.get(name)?.riskScoreTotal)
-    .filter((s) => Number.isFinite(s));
-  const avgScore = stateScores.length
-    ? Math.round(stateScores.reduce((a, b) => a + b, 0) / stateScores.length)
-    : 0;
-
-  let isoRiskLevel;
-  if (avgScore <= -71) isoRiskLevel = "High Risk";
-  else if (avgScore <= -21) isoRiskLevel = "Moderate Risk";
-  else if (avgScore <= 4) isoRiskLevel = "Emerging Risk";
-  else isoRiskLevel = "Low Risk";
+  const { avg: avgScore, tier: isoRiskLevel } = isoRisk(stateNames);
 
   if (ui.panelTitle) ui.panelTitle.textContent = isoName;
 
@@ -1053,7 +1140,7 @@ function renderNationalPanel() {
   currentContext = { type: "national", value: "National" };
 
   if (ui.panelTitle) ui.panelTitle.textContent = "US Market Overview";
-  if (ui.panelMeta) ui.panelMeta.innerHTML = `<span class="risk-badge risk-badge--national">National</span> 50 states · ${[...entriesByState.values()].flat().filter(e=>e.state!=="National").length} signals tracked`;
+  if (ui.panelMeta) ui.panelMeta.innerHTML = `<span class="risk-badge risk-badge--national">National</span> 50 states · ${new Set([...entriesByState.values()].flat().filter(e=>e.state!=="National").map(e=>e.id || e.title)).size} signals tracked`;
   if (ui.panelRiskContext) ui.panelRiskContext.style.display = "none";
 
   renderTopSignals([]);
@@ -1076,12 +1163,12 @@ function renderNationalPanel() {
 
   /* Compute data */
   const allStates = [...stateIndex.values()].filter(s => s.state !== "National");
-  const riskCounts = { "High Risk": 0, "Moderate Risk": 0, "Emerging Risk": 0, "Low Risk": 0 };
+  const riskCounts = { "High Risk": 0, "Moderate Risk": 0, "Emerging Risk": 0, "Low Risk": 0, "Limited Data": 0 };
   for (const s of allStates) if (s.calculatedRiskLevel in riskCounts) riskCounts[s.calculatedRiskLevel]++;
   const total = allStates.length;
 
   const dimKeys = ["grid", "policy", "economics", "cleanenergy", "community"];
-  const dimLabels = { grid: "Grid & Infrastructure", policy: "Policy & Regulatory", economics: "Economics", cleanenergy: "Clean Energy", community: "Community & Water" };
+  const dimLabels = { grid: "Grid & Infrastructure", policy: "Policy & Regulatory", economics: "Saturation & Costs", cleanenergy: "Clean Energy", community: "Community & Water" };
   const dimTotals = Object.fromEntries(dimKeys.map(k => [k, 0]));
   for (const s of allStates) {
     const sc = computeDimensionScores(s.state);
@@ -1089,24 +1176,29 @@ function renderNationalPanel() {
   }
   const dimAvg = Object.fromEntries(dimKeys.map(k => [dimTotals[k] / total, k]).map((_, i) => [dimKeys[i], +(dimTotals[dimKeys[i]] / total).toFixed(2)]));
 
-  const avgRisk = Math.round(allStates.reduce((a, s) => a + (s.riskScoreTotal || 0), 0) / total);
-  let overallVerdict, overallCls;
-  if (avgRisk >= 5) { overallVerdict = "Favorable Nationally"; overallCls = "verdict--go"; }
-  else if (avgRisk >= -20) { overallVerdict = "Emerging Headwinds"; overallCls = "verdict--caution"; }
-  else if (avgRisk >= -70) { overallVerdict = "Moderate Constraints"; overallCls = "verdict--watch"; }
-  else { overallVerdict = "Significant Friction"; overallCls = "verdict--hold"; }
+  const ratedStates = allStates.filter(s => s.calculatedRiskLevel !== "Limited Data");
+  const avgRisk = ratedStates.length
+    ? Math.round((ratedStates.reduce((a, s) => a + (s.riskScoreTotal || 0), 0) / ratedStates.length) * 10) / 10
+    : 0;
+  const NAT_VERDICT = {
+    "Low Risk": ["Favorable Nationally", "verdict--go"],
+    "Emerging Risk": ["Emerging Headwinds", "verdict--caution"],
+    "Moderate Risk": ["Moderate Constraints", "verdict--watch"],
+    "High Risk": ["Significant Friction", "verdict--hold"],
+  };
+  const [overallVerdict, overallCls] = NAT_VERDICT[tierForScore(avgRisk, SCORING.minSignals)];
 
   /* Summary sentence, computed from live data (was hard-coded) */
   const fmtAvg = v => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(2)}`;
   const dimSorted = [...dimKeys].sort((a, b) => dimAvg[a] - dimAvg[b]);
   const dragKey = dimSorted[0];
   const positives = dimKeys.filter(k => dimAvg[k] > 0.05).map(k => dimLabels[k].toLowerCase());
-  const topTier = Object.entries(riskCounts).sort((a, b) => b[1] - a[1])[0];
+  const topTier = Object.entries(riskCounts).filter(([t]) => t !== "Limited Data").sort((a, b) => b[1] - a[1])[0];
   const topTierPct = Math.round((topTier[1] / total) * 100);
   const natSummary =
     `${dimLabels[dragKey]} is the biggest drag on the US market (${fmtAvg(dimAvg[dragKey])} avg). ` +
     (positives.length ? `${positives.join(" and ").replace(/^./, c => c.toUpperCase())} ${positives.length > 1 ? "are" : "is"} net positive. ` : "No dimension is net positive. ") +
-    `${topTierPct}% of states sit in ${topTier[0]}.`;
+    `${topTierPct}% of states sit in ${topTier[0]}` + (riskCounts["Limited Data"] ? `; ${riskCounts["Limited Data"]} have too few signals to rate.` : ".");
 
   const highRisk = allStates.filter(s => s.calculatedRiskLevel === "High Risk").sort((a, b) => a.riskScoreTotal - b.riskScoreTotal).slice(0, 5);
   const lowRisk  = allStates.filter(s => s.calculatedRiskLevel === "Low Risk" || s.calculatedRiskLevel === "Emerging Risk").sort((a, b) => b.riskScoreTotal - a.riskScoreTotal).slice(0, 5);
@@ -1119,8 +1211,8 @@ function renderNationalPanel() {
   const bestInference = bestFor({ grid: 3, economics: 2.5, policy: 2 });
 
   /* Risk tier bar */
-  const tierColors = { "High Risk": "#E57373", "Moderate Risk": "#F7C6C7", "Emerging Risk": "#F3E6AE", "Low Risk": "#A8D5BA" };
-  const tierOrder  = ["Low Risk", "Emerging Risk", "Moderate Risk", "High Risk"];
+  const tierColors = { "High Risk": "#E57373", "Moderate Risk": "#F7C6C7", "Emerging Risk": "#F3E6AE", "Low Risk": "#A8D5BA", "Limited Data": "#D5DBE3" };
+  const tierOrder  = ["Low Risk", "Emerging Risk", "Moderate Risk", "High Risk", "Limited Data"];
   const tierBarHtml = tierOrder.map(t => {
     const pct = ((riskCounts[t] || 0) / total * 100).toFixed(1);
     return `<div class="nat-tier-seg" style="width:${pct}%;background:${tierColors[t]}" title="${t}: ${riskCounts[t]} states (${pct}%)"></div>`;
@@ -1154,7 +1246,7 @@ function renderNationalPanel() {
     <div class="nat-section nat-section--verdict">
       <div class="advisory-verdict ${overallCls} nat-verdict">
         <span class="advisory-verdict__label">${overallVerdict}</span>
-        <span class="advisory-verdict__context">· avg score ${avgRisk > 0 ? "+" : ""}${avgRisk} across 50 states</span>
+        <span class="advisory-verdict__context">· avg score ${avgRisk > 0 ? "+" : ""}${avgRisk} across ${ratedStates.length} rated states</span>
       </div>
       <p class="nat-summary">${natSummary}</p>
     </div>
@@ -1581,6 +1673,7 @@ function initMap() {
           "Emerging Risk", "#F3E6AE",
           "Moderate Risk", "#F7C6C7",
           "High Risk", "#E57373",
+          "Limited Data", "#D5DBE3",
           "#1E293B"
         ],
         "fill-opacity": [
@@ -1630,6 +1723,7 @@ function initMap() {
           "Emerging Risk", "#F3E6AE",
           "Moderate Risk", "#F7C6C7",
           "High Risk", "#E57373",
+          "Limited Data", "#D5DBE3",
           "#1E293B"
         ],
         "fill-opacity": [

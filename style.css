@@ -430,6 +430,11 @@ html, body {
   color: #166534;
 }
 
+.risk-badge--limited {
+  background: #EEF1F5;
+  color: #475569;
+}
+
 .risk-badge--national {
   background: #EFF6FF;
   color: #1D4ED8;
@@ -583,6 +588,7 @@ html, body {
 .tier-dot--emerging { background:#F3E6AE; border:1px solid #D4C570; }
 .tier-dot--moderate { background:#F7C6C7; }
 .tier-dot--high    { background:#E57373; }
+.tier-dot--limited { background:#D5DBE3; border:1px solid #B8C1CC; }
 .methodology-panel__footer {
   font-size:10.5px; color:#94A3B8; margin:0; line-height:1.4;
 }

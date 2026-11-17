@@ -5,6 +5,16 @@ function firstValue(v) {
   return v ?? "";
 }
 
+function asArray(v) {
+  if (Array.isArray(v)) return v.filter(Boolean);
+  return v ? [v] : [];
+}
+
+function num(v) {
+  const n = Number(firstValue(v));
+  return Number.isFinite(n) ? n : 0;
+}
+
 export default async function handler(req, res) {
   try {
     const apiKey = envOrThrow("AIRTABLE_API_KEY");
@@ -23,7 +33,15 @@ export default async function handler(req, res) {
         summary: firstValue(f.Summary),
         link: firstValue(f.Link),
         publishedDate: firstValue(f["Published Date"]),
-        state: firstValue(f["State Name"]), // <-- human-readable state name
+        state: firstValue(f["State Name"]), // <-- human-readable state name (first linked state)
+        states: asArray(f["State Name"]),   // every linked state, so multi-state signals count everywhere
+        dims: {
+          grid: num(f["Dim: Grid"]),
+          regulatory: num(f["Dim: Regulatory"]),
+          water: num(f["Dim: Water"]),
+          clean: num(f["Dim: Clean Energy"]),
+          saturation: num(f["Dim: Saturation"]),
+        },
         category: firstValue(f["Category (linked)"]) || firstValue(f.Category),
         impactLevel: firstValue(f["Impact Level (linked)"]) || firstValue(f["Impact Level"]),
         signalType: firstValue(f["Signal Type (linked)"]) || firstValue(f["Signal Type"]),

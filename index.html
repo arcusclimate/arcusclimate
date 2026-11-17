@@ -67,7 +67,7 @@
       </div>
 
       <p class="methodology-panel__intro">
-        Each signal is scored across five dimensions. State scores are the sum of all entry scores. Risk tiers are assigned based on that total.
+        Each signal is scored with a fixed rubric based on its category, impact (Low / Medium / High) and direction. A state's score is the sum of its signals' scores (each capped at ±12), weighted by age so a signal counts half as much after 12 months and a quarter after 24. States with fewer than 3 signals show as Limited Data unless one signal alone is strong enough to set the tier.
       </p>
 
       <div class="methodology-panel__dims">
@@ -95,10 +95,11 @@
 
       <div class="methodology-panel__tiers">
         <div class="methodology-panel__tier-title">Risk Tiers</div>
-        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--low"></span><strong>Low Risk</strong>&nbsp; >= +5</div>
-        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--emerging"></span><strong>Emerging Risk</strong>&nbsp; -20 to +4</div>
-        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--moderate"></span><strong>Moderate Risk</strong>&nbsp; -70 to -21</div>
-        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--high"></span><strong>High Risk</strong>&nbsp; <= -71</div>
+        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--low"></span><strong>Low Risk</strong>&nbsp; ≥ +3</div>
+        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--emerging"></span><strong>Emerging Risk</strong>&nbsp; −6 to +3</div>
+        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--moderate"></span><strong>Moderate Risk</strong>&nbsp; −18 to −6</div>
+        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--high"></span><strong>High Risk</strong>&nbsp; ≤ −18</div>
+        <div class="methodology-panel__tier"><span class="tier-dot tier-dot--limited"></span><strong>Limited Data</strong>&nbsp; fewer than 3 signals</div>
       </div>
 
       <p class="methodology-panel__footer">
@@ -149,7 +150,7 @@
       <span class="legend__swatch" style="background:#A8D5BA;"></span>
       <div>
         <div class="legend__label">Low Risk</div>
-        <div class="legend__range">Score: >= +5</div>
+        <div class="legend__range">Score: ≥ +3</div>
       </div>
     </div>
 
@@ -157,7 +158,7 @@
       <span class="legend__swatch" style="background:#F3E6AE;"></span>
       <div>
         <div class="legend__label">Emerging Risk</div>
-        <div class="legend__range">Score: -20 to +4</div>
+        <div class="legend__range">Score: −6 to +3</div>
       </div>
     </div>
 
@@ -165,7 +166,7 @@
       <span class="legend__swatch" style="background:#F7C6C7;"></span>
       <div>
         <div class="legend__label">Moderate Risk</div>
-        <div class="legend__range">Score: -70 to -21</div>
+        <div class="legend__range">Score: −18 to −6</div>
       </div>
     </div>
 
@@ -173,14 +174,22 @@
       <span class="legend__swatch" style="background:#E57373;"></span>
       <div>
         <div class="legend__label">High Risk</div>
-        <div class="legend__range">Score: <= -71</div>
+        <div class="legend__range">Score: ≤ −18</div>
+      </div>
+    </div>
+
+    <div class="legend__row">
+      <span class="legend__swatch" style="background:#D5DBE3;"></span>
+      <div>
+        <div class="legend__label">Limited Data</div>
+        <div class="legend__range">Fewer than 3 signals</div>
       </div>
     </div>
 
     <div class="legend__divider"></div>
 
     <div class="legend__note">
-      Scores sum five dimensions: grid capacity, regulatory environment, water risk, clean energy access, and market saturation.
+      Each signal is scored on grid, regulatory, water, clean energy and saturation. Recent signals count more (weight halves every 12 months).
     </div>
 
     <div class="legend__updated" id="legendLastUpdated"></div>
