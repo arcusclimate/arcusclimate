@@ -69,23 +69,28 @@ const RISK_FILL_EXPR = [
   "#1E293B"
 ];
 
-/* ── Scoring (rubric v2, Nov 2026) ─────────────────────────
-   State score = sum over its signals of (entry score, capped at ±12)
-   × recency weight (halves every 12 months). Tiers come from that score.
-   A state with fewer than 3 signals is "Limited Data" unless one signal
-   alone moves it past a tier boundary (score ≤ −6 or ≥ +3). */
+/* ── Scoring (rubric v2 + coverage-adjusted average, Nov 2026) ──
+   Each signal's score (capped at ±12) is weighted by recency (halves every
+   12 months). A state's score is the weighted AVERAGE of its signals, pulled
+   toward neutral (0) by a prior worth 2 fresh signals, so a state isn't rated
+   more extreme just because it has more coverage, and thin evidence can't
+   produce a confident color.
+   - Limited Data: less than one fresh signal's worth of evidence (weight < 1).
+   - Floor: a High-impact negative moratorium/permit pause in the last 12 months
+     keeps a state at Moderate Risk or worse. */
 const SCORING = {
   halfLifeMonths: 12,
   entryCap: 12,
-  minSignals: 3,
-  tiers: { high: -18, moderate: -6, low: 3 },
+  priorWeight: 2,
+  minEvidence: 1,
+  tiers: { high: -2.3, moderate: -1.2, low: 1.0 },
 };
 const TIER_RANGES = {
-  "High Risk": "Score ≤ −18",
-  "Moderate Risk": "Score −18 to −6",
-  "Emerging Risk": "Score −6 to +3",
-  "Low Risk": "Score ≥ +3",
-  "Limited Data": "Fewer than 3 signals",
+  "High Risk": "Score ≤ −2.3",
+  "Moderate Risk": "Score −2.3 to −1.2",
+  "Emerging Risk": "Score −1.2 to +1.0",
+  "Low Risk": "Score ≥ +1.0",
+  "Limited Data": "Too few recent signals",
 };
 const DIM_RANGE = { grid: 10, regulatory: 10, water: 10, clean: 5, saturation: 5 };
 
@@ -102,22 +107,29 @@ function recencyWeight(dateStr) {
 }
 
 function scoreEntries(entries) {
-  let total = 0;
+  let num = 0, evidence = 0, floor = false;
   for (const e of entries) {
     const s = Math.max(-SCORING.entryCap, Math.min(SCORING.entryCap, entryRawScore(e)));
-    total += s * recencyWeight(e.publishedDate);
+    const w = recencyWeight(e.publishedDate);
+    num += s * w;
+    evidence += w;
+    if (e.category === "Moratorium" && /^high/i.test(e.impactLevel || "")
+        && /^negative/i.test(e.signalDirection || "") && w >= 0.5) floor = true;
   }
-  return Math.round(total * 10) / 10;
+  const score = Math.round((num / (evidence + SCORING.priorWeight)) * 100) / 100;
+  return { score, evidence: Math.round(evidence * 100) / 100, floor };
 }
 
-function tierForScore(score, signalCount) {
+function tierForScore(score, evidence = Infinity, floor = false) {
   const t = SCORING.tiers;
-  if (!signalCount) return "Limited Data";
-  if (signalCount < SCORING.minSignals && score > t.moderate && score < t.low) return "Limited Data";
-  if (score <= t.high) return "High Risk";
-  if (score <= t.moderate) return "Moderate Risk";
-  if (score >= t.low) return "Low Risk";
-  return "Emerging Risk";
+  if (!(evidence >= SCORING.minEvidence)) return "Limited Data";
+  let tier;
+  if (score <= t.high) tier = "High Risk";
+  else if (score <= t.moderate) tier = "Moderate Risk";
+  else if (score >= t.low) tier = "Low Risk";
+  else tier = "Emerging Risk";
+  if (floor && (tier === "Emerging Risk" || tier === "Low Risk")) tier = "Moderate Risk";
+  return tier;
 }
 
 const TARIFF_FILL_EXPR = [
@@ -131,11 +143,11 @@ const TARIFF_FILL_EXPR = [
 ];
 
 const RISK_CONTEXT = {
-  "High Risk": "Compounding constraints across grid capacity, regulation and community opposition make new data center siting costly, slow, or politically uncertain. Score ≤ −18.",
-  "Moderate Risk": "Meaningful infrastructure or regulatory headwinds. Growth is possible but needs careful diligence on grid timelines, tariff exposure and policy direction. Score −18 to −6.",
-  "Emerging Risk": "Early warning signals. Conditions are workable, but the risk profile is shifting as AI compute demand grows. Score −6 to +3.",
-  "Low Risk": "Relatively favorable conditions for AI infrastructure siting, with supportive policy and few near-term constraint signals. Score ≥ +3.",
-  "Limited Data": "Fewer than 3 tracked signals, and none strong enough on its own to support a rating. Treat as unrated, not as low risk.",
+  "High Risk": "Compounding constraints across grid capacity, regulation and community opposition make new data center siting costly, slow, or politically uncertain. Score ≤ −2.3.",
+  "Moderate Risk": "Meaningful infrastructure or regulatory headwinds. Growth is possible but needs careful diligence on grid timelines, tariff exposure and policy direction. Score −2.3 to −1.2.",
+  "Emerging Risk": "Early warning signals. Conditions are workable, but the risk profile is shifting as AI compute demand grows. Score −1.2 to +1.0.",
+  "Low Risk": "Relatively favorable conditions for AI infrastructure siting, with supportive policy and few near-term constraint signals. Score ≥ +1.0.",
+  "Limited Data": "Too few recent signals to support a rating (less than one current signal's worth after weighting for age). Treat as unrated, not as low risk.",
   "No Data": ""
 };
 
@@ -362,8 +374,10 @@ function buildIndexes() {
     for (const [name, rec] of stateIndex.entries()) {
       const list = (entriesByState.get(name) || []).filter((e) => e.dims);
       rec.entryCount = list.length;
-      rec.riskScoreTotal = scoreEntries(list);
-      rec.calculatedRiskLevel = tierForScore(rec.riskScoreTotal, rec.entryCount);
+      const { score, evidence, floor } = scoreEntries(list);
+      rec.riskScoreTotal = score;
+      rec.evidence = evidence;
+      rec.calculatedRiskLevel = tierForScore(score, evidence, floor);
     }
   }
 
@@ -427,8 +441,8 @@ function isoRisk(stateNames) {
     .map((name) => stateIndex.get(name))
     .filter((s) => s && Number.isFinite(s.riskScoreTotal) && s.calculatedRiskLevel !== "Limited Data");
   if (!rated.length) return { avg: 0, tier: "Limited Data" };
-  const avg = Math.round((rated.reduce((a, s) => a + s.riskScoreTotal, 0) / rated.length) * 10) / 10;
-  return { avg, tier: tierForScore(avg, SCORING.minSignals) };
+  const avg = Math.round((rated.reduce((a, s) => a + s.riskScoreTotal, 0) / rated.length) * 100) / 100;
+  return { avg, tier: tierForScore(avg) };
 }
 
 function getIsoCentroids() {
@@ -1178,7 +1192,7 @@ function renderNationalPanel() {
 
   const ratedStates = allStates.filter(s => s.calculatedRiskLevel !== "Limited Data");
   const avgRisk = ratedStates.length
-    ? Math.round((ratedStates.reduce((a, s) => a + (s.riskScoreTotal || 0), 0) / ratedStates.length) * 10) / 10
+    ? Math.round((ratedStates.reduce((a, s) => a + (s.riskScoreTotal || 0), 0) / ratedStates.length) * 100) / 100
     : 0;
   const NAT_VERDICT = {
     "Low Risk": ["Favorable Nationally", "verdict--go"],
@@ -1186,7 +1200,7 @@ function renderNationalPanel() {
     "Moderate Risk": ["Moderate Constraints", "verdict--watch"],
     "High Risk": ["Significant Friction", "verdict--hold"],
   };
-  const [overallVerdict, overallCls] = NAT_VERDICT[tierForScore(avgRisk, SCORING.minSignals)];
+  const [overallVerdict, overallCls] = NAT_VERDICT[tierForScore(avgRisk)];
 
   /* Summary sentence, computed from live data (was hard-coded) */
   const fmtAvg = v => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(2)}`;
