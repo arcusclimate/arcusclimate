@@ -77,7 +77,7 @@ const RISK_FILL_EXPR = [
    produce a confident color.
    - Limited Data: less than one fresh signal's worth of evidence (weight < 1).
    - Floor: a High-impact negative moratorium/permit pause in the last 12 months
-     keeps a state at Moderate Risk or worse. */
+     (statewide-scale halt) puts a state at High Risk. */
 const SCORING = {
   halfLifeMonths: 12,
   entryCap: 12,
@@ -128,7 +128,7 @@ function tierForScore(score, evidence = Infinity, floor = false) {
   else if (score <= t.moderate) tier = "Moderate Risk";
   else if (score >= t.low) tier = "Low Risk";
   else tier = "Emerging Risk";
-  if (floor && (tier === "Emerging Risk" || tier === "Low Risk")) tier = "Moderate Risk";
+  if (floor) tier = "High Risk";
   return tier;
 }
 
